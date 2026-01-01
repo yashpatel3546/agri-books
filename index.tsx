@@ -39,7 +39,8 @@ import {
   Search,
   Filter,
   ArrowUpDown,
-  XCircle
+  XCircle,
+  GitMerge
 } from 'lucide-react';
 
 // --- Types ---
@@ -137,7 +138,7 @@ const TRANSLATIONS = {
     addNew: "Add New",
     saveRecord: "Save Record",
     cancel: "Cancel",
-    backupRestore: "Backup / Restore",
+    backupRestore: "Backup & Sync",
     downloadReport: "Download Report (PDF)",
     shareWhatsapp: "Share Backup",
     calculationDetails: "Calculation Details",
@@ -185,7 +186,7 @@ const TRANSLATIONS = {
     addNew: "નવો વહેવાર",
     saveRecord: "સેવ કરો",
     cancel: "રદ કરો",
-    backupRestore: "બેકઅપ / રિસ્ટોર",
+    backupRestore: "બેકઅપ & સિંક",
     downloadReport: "રિપોર્ટ ડાઉનલોડ (PDF)",
     shareWhatsapp: "વોટ્સએપ પર મોકલો",
     calculationDetails: "હિસાબની વિગત",
@@ -1472,7 +1473,7 @@ const DataManagementView = ({ onImport, onExport, seasons, onExportSeason, lang 
              <li>Click <strong>"Backup for WhatsApp"</strong> below. It will download a file.</li>
              <li>Send that file to your Uncle via WhatsApp.</li>
              <li>Uncle downloads the file on his phone.</li>
-             <li>Uncle opens this app, goes to this Data tab, clicks <strong>"Restore Data"</strong> and selects the file.</li>
+             <li>Uncle opens this app, goes to this Data tab, clicks <strong>"Select File to Merge"</strong> and selects the file.</li>
           </ol>
        </div>
        
@@ -1508,15 +1509,15 @@ const DataManagementView = ({ onImport, onExport, seasons, onExportSeason, lang 
              <div className="space-y-4 border-t md:border-t-0 md:border-l border-slate-100 pt-6 md:pt-0 md:pl-8">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="bg-orange-50 p-3 rounded-full text-orange-600">
-                    <Upload className="w-6 h-6" />
+                    <GitMerge className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-slate-800">2. Restore Data</h4>
-                    <p className="text-xs text-slate-500">Select file received from WhatsApp</p>
+                    <h4 className="font-bold text-slate-800">2. Smart Merge (Import)</h4>
+                    <p className="text-xs text-slate-500">Combine incoming data with your existing data.</p>
                   </div>
                 </div>
                 <label className="w-full py-4 bg-white border-2 border-dashed border-orange-200 hover:border-orange-500 text-orange-600 font-semibold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all hover:bg-orange-50 active:scale-[0.98]">
-                  <Upload className="w-5 h-5" /> Select Backup File
+                  <Upload className="w-5 h-5" /> Select File to Merge
                   <input type="file" accept=".json" onChange={onImport} className="hidden" />
                 </label>
              </div>
@@ -1820,12 +1821,34 @@ const App = () => {
 
   const confirmImport = () => {
     if (pendingImport) {
-       setTransactions(pendingImport.transactions || []);
-       setWorkers(pendingImport.workers || []);
-       setPartners(pendingImport.partners || INITIAL_PARTNERS);
-       setSeasons(pendingImport.seasons || (pendingImport.season ? [pendingImport.season] : []));
-       if(pendingImport.categories) setCategories(pendingImport.categories);
-       showNotification("Data restored successfully!", 'success');
+       // Helper to merge lists by ID
+       const mergeById = (current: any[], incoming: any[]) => {
+          const map = new Map(current.map(i => [i.id, i]));
+          incoming.forEach(i => map.set(i.id, i)); // Incoming overwrites existing if same ID
+          return Array.from(map.values());
+       };
+
+       setTransactions(prev => mergeById(prev, pendingImport.transactions || []));
+       setWorkers(prev => mergeById(prev, pendingImport.workers || []));
+       setPartners(prev => mergeById(prev, pendingImport.partners || []));
+       setSeasons(prev => mergeById(prev, pendingImport.seasons || (pendingImport.season ? [pendingImport.season] : [])));
+       
+       if (pendingImport.categories) {
+          setCategories(prev => {
+             const next = { ...prev };
+             Object.keys(pendingImport.categories).forEach(k => {
+                 // @ts-ignore
+                 const existingList = prev[k] || [];
+                 // @ts-ignore
+                 const incomingList = pendingImport.categories[k] || [];
+                 // @ts-ignore
+                 next[k] = Array.from(new Set([...existingList, ...incomingList]));
+             });
+             return next;
+          });
+       }
+
+       showNotification("Data merged successfully!", 'success');
        setPendingImport(null);
     }
   };
@@ -2050,25 +2073,26 @@ const App = () => {
         </div>
       )}
 
-      {/* Import Confirmation Modal */}
+      {/* Import Confirmation Modal - UPDATED FOR SMART MERGE */}
       {pendingImport && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95">
              <div className="flex flex-col items-center text-center">
-               <div className="bg-orange-50 p-4 rounded-full text-orange-600 mb-4">
-                 <Upload className="w-8 h-8" />
+               <div className="bg-emerald-50 p-4 rounded-full text-emerald-600 mb-4">
+                 <GitMerge className="w-8 h-8" />
                </div>
-               <h3 className="text-xl font-bold text-slate-900 mb-2">Restore Data?</h3>
-               <p className="text-sm text-slate-600 mb-6 font-medium">
-                 WARNING: This will replace ALL current data with the data from the backup file. This action cannot be undone.
+               <h3 className="text-xl font-bold text-slate-900 mb-2">Smart Merge Data?</h3>
+               <p className="text-sm text-slate-600 mb-6 font-medium leading-relaxed">
+                 Safe to perform. <br/>
+                 This will <span className="text-emerald-700 font-bold">combine</span> the backup with your existing data. No data will be lost.
                </p>
                <div className="flex gap-3 w-full">
                  <button onClick={() => setPendingImport(null)} className="flex-1 py-3 bg-slate-100 text-slate-700 font-semibold rounded-xl hover:bg-slate-200 transition-colors">Cancel</button>
                  <button 
                    onClick={confirmImport} 
-                   className="flex-1 py-3 bg-orange-600 text-white font-semibold rounded-xl hover:bg-orange-700 shadow-lg shadow-orange-200 transition-colors"
+                   className="flex-1 py-3 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-colors"
                  >
-                   Restore Data
+                   Merge Data
                  </button>
                </div>
              </div>
