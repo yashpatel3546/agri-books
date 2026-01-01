@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
+import { jsPDF } from "jspdf";
+import autoTable from 'jspdf-autotable';
 import { 
   Sprout, 
   Users, 
@@ -28,7 +30,16 @@ import {
   Lock,
   CheckCircle,
   Info,
-  AlertCircle
+  AlertCircle,
+  Printer,
+  Share2,
+  Languages,
+  Calculator,
+  FileText,
+  Search,
+  Filter,
+  ArrowUpDown,
+  XCircle
 } from 'lucide-react';
 
 // --- Types ---
@@ -37,6 +48,7 @@ type PaymentSource = 'FARM_CASH' | 'FARM_BANK' | 'PARTNER';
 type TransactionType = 'INCOME' | 'EXPENSE' | 'WORKER_ADVANCE' | 'PARTNER_CONTRIBUTION' | 'PARTNER_WITHDRAWAL';
 type SeasonStatus = 'OPEN' | 'CLOSED';
 type NotificationType = 'success' | 'error' | 'info';
+type Language = 'EN' | 'GU';
 
 interface Season {
   id: string;
@@ -94,12 +106,188 @@ const DEFAULT_CATEGORIES: CategoryMap = {
   PARTNER: ['Capital Injection', 'Personal Withdrawal']
 };
 
+// --- Translations ---
+
+const TRANSLATIONS = {
+  EN: {
+    dashboard: "Dashboard",
+    transactions: "Transactions",
+    seasons: "Seasons",
+    workers: "Workers",
+    partners: "Partners",
+    data: "Data & Sync",
+    farmCash: "Farm Cash",
+    bankBalance: "Bank Balance",
+    workerAdvances: "Worker Advances",
+    invested: "Invested",
+    withdrawn: "Withdrawn",
+    recentActivity: "Recent Activity",
+    viewAll: "View All",
+    newSeason: "New Season",
+    closeSeason: "Close Season",
+    delete: "Delete",
+    farmPerformance: "Farm Performance",
+    totalRevenue: "Total Revenue",
+    totalExpenses: "Total Expenses",
+    netProfit: "Net Farm Profit",
+    workerShare: "Worker Share (20%)",
+    finalPayable: "Final Payable",
+    addWorker: "Add Worker",
+    totalDebt: "Total Debt",
+    addNew: "Add New",
+    saveRecord: "Save Record",
+    cancel: "Cancel",
+    backupRestore: "Backup / Restore",
+    downloadReport: "Download Report (PDF)",
+    shareWhatsapp: "Share Backup",
+    calculationDetails: "Calculation Details",
+    printReport: "Print Report",
+    income: "Income",
+    expense: "Expense",
+    description: "Description",
+    category: "Category",
+    date: "Date",
+    amount: "Amount",
+    filters: "Filters",
+    searchPlaceholder: "Search description...",
+    startDate: "Start Date",
+    endDate: "End Date",
+    filterByEntity: "Filter by Person",
+    sortBy: "Sort By",
+    reset: "Reset Filters",
+    filteredTotal: "Filtered Summary"
+  },
+  GU: {
+    dashboard: "ડેશબોર્ડ (Dashboard)",
+    transactions: "વહેવાર (Transactions)",
+    seasons: "સીઝન (Seasons)",
+    workers: "મજૂર / ભૈયાજી",
+    partners: "ભાગીદાર (Partners)",
+    data: "ડેટા અને બેકઅપ",
+    farmCash: "રોકડ (Cash)",
+    bankBalance: "બેંક બેલેન્સ",
+    workerAdvances: "મજૂર ઉપાડ (Advance)",
+    invested: "રોકાણ",
+    withdrawn: "ઉપાડ",
+    recentActivity: "તાજેતરના વહેવાર",
+    viewAll: "બધું જુઓ",
+    newSeason: "નવી સીઝન",
+    closeSeason: "સીઝન પૂરી કરો",
+    delete: "ડિલીટ",
+    farmPerformance: "ખેતી હિસાબ",
+    totalRevenue: "કુલ આવક",
+    totalExpenses: "કુલ ખર્ચ",
+    netProfit: "ચોખ્ખો નફો",
+    workerShare: "મજૂર ભાગ (20%)",
+    finalPayable: "ચૂકવવાપાત્ર રકમ",
+    addWorker: "મજૂર ઉમેરો",
+    totalDebt: "બાકી ઉપાડ",
+    addNew: "નવો વહેવાર",
+    saveRecord: "સેવ કરો",
+    cancel: "રદ કરો",
+    backupRestore: "બેકઅપ / રિસ્ટોર",
+    downloadReport: "રિપોર્ટ ડાઉનલોડ (PDF)",
+    shareWhatsapp: "વોટ્સએપ પર મોકલો",
+    calculationDetails: "હિસાબની વિગત",
+    printReport: "પ્રિન્ટ રિપોર્ટ",
+    income: "આવક",
+    expense: "ખર્ચ",
+    description: "વિગત",
+    category: "કેટેગરી",
+    date: "તારીખ",
+    amount: "રકમ",
+    filters: "ફિલ્ટર (Filters)",
+    searchPlaceholder: "વિગત શોધો...",
+    startDate: "તારીખ થી",
+    endDate: "તારીખ સુધી",
+    filterByEntity: "વ્યક્તિ પસંદ કરો",
+    sortBy: "ક્રમ (Sort)",
+    reset: "રીસેટ કરો",
+    filteredTotal: "તારણ (Summary)"
+  }
+};
+
 // --- Helper Functions ---
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const formatCurrency = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
 
-// --- SUB-COMPONENTS (Defined Outside App for Stability) ---
+const generateSeasonPDF = (season: Season, transactions: Transaction[], lang: Language) => {
+    const doc = new jsPDF();
+    const t = TRANSLATIONS[lang];
+
+    // --- Calculations ---
+    const incomeTransactions = transactions.filter(tr => tr.type === 'INCOME');
+    const expenseTransactions = transactions.filter(tr => tr.type === 'EXPENSE');
+    
+    const totalIncome = incomeTransactions.reduce((sum, tr) => sum + Number(tr.amount), 0);
+    const totalExpense = expenseTransactions.reduce((sum, tr) => sum + Number(tr.amount), 0);
+    const netProfit = totalIncome - totalExpense;
+
+    // Worker Share Logic
+    const workerIncBase = incomeTransactions.filter(tr => tr.includeInWorkerShare !== false).reduce((sum, tr) => sum + Number(tr.amount), 0);
+    const workerExpBase = expenseTransactions.filter(tr => tr.includeInWorkerShare !== false).reduce((sum, tr) => sum + Number(tr.amount), 0);
+    const workerShare = (workerIncBase * 0.20) - (workerExpBase * 0.20);
+    
+    const advances = transactions.filter(tr => tr.type === 'WORKER_ADVANCE').reduce((sum, tr) => sum + Number(tr.amount), 0);
+    const payable = workerShare - advances;
+
+    // --- PDF Construction ---
+
+    // Title
+    doc.setFontSize(18);
+    doc.setTextColor(6, 78, 59); // Emerald 900
+    doc.text("AgriBooks Season Report", 14, 20);
+    
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Season: ${season.name}`, 14, 30);
+    doc.text(`Duration: ${season.startDate} to ${season.endDate || 'Present'}`, 14, 36);
+
+    // Summary Box
+    doc.setDrawColor(200);
+    doc.setFillColor(245, 255, 250); // Mint cream
+    doc.rect(14, 42, 180, 40, 'FD');
+
+    doc.setFontSize(11);
+    doc.text("Farm Financials", 20, 50);
+    doc.setFontSize(10);
+    doc.text(`Total Income: ${totalIncome.toLocaleString('en-IN')}`, 20, 58);
+    doc.text(`Total Expense: ${totalExpense.toLocaleString('en-IN')}`, 20, 64);
+    
+    doc.setFont(undefined, 'bold');
+    doc.text(`Net Profit: ${netProfit.toLocaleString('en-IN')}`, 20, 74);
+    doc.setFont(undefined, 'normal');
+
+    // Worker Share Box (Right side of summary)
+    doc.text("Worker Share (20%)", 110, 50);
+    doc.text(`Share Entitlement: ${workerShare.toLocaleString('en-IN')}`, 110, 58);
+    doc.text(`Less Advances: -${advances.toLocaleString('en-IN')}`, 110, 64);
+    doc.setFont(undefined, 'bold');
+    doc.text(`Final Payable: ${payable.toLocaleString('en-IN')}`, 110, 74);
+    doc.setFont(undefined, 'normal');
+
+    // Transaction Table
+    const tableData = transactions.map(tr => [
+        tr.date,
+        tr.category,
+        tr.type,
+        tr.amount.toLocaleString('en-IN'),
+        tr.description || '-'
+    ]);
+
+    autoTable(doc, {
+        startY: 90,
+        head: [['Date', 'Category', 'Type', 'Amount', 'Description']],
+        body: tableData,
+        headStyles: { fillColor: [6, 78, 59] }, // Emerald 900
+        alternateRowStyles: { fillColor: [240, 253, 244] }, // Green 50
+    });
+
+    doc.save(`AgriBooks_Report_${season.name.replace(/\s+/g, '_')}.pdf`);
+};
+
+// --- SUB-COMPONENTS ---
 
 const NavButton = ({ icon, label, active, onClick }: any) => (
   <button 
@@ -123,91 +311,96 @@ const MobileNavBtn = ({ icon, label, active, onClick }: any) => (
 
 // --- View Components ---
 
-const Dashboard = ({ financials, transactions, seasons, partners, workers, onDeleteTransaction, onEditTransaction, onViewAll }: any) => (
-  <div className="space-y-6 pb-20 md:pb-0 animate-in fade-in">
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-all">
-        <div className="absolute right-0 top-0 opacity-[0.03] transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform">
-          <Wallet size={120} />
+const Dashboard = ({ financials, transactions, seasons, partners, workers, onDeleteTransaction, onEditTransaction, onViewAll, lang }: any) => {
+  const t = TRANSLATIONS[lang as Language];
+  return (
+    <div className="space-y-6 pb-20 md:pb-0 animate-in fade-in">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-all">
+          <div className="absolute right-0 top-0 opacity-[0.03] transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform">
+            <Wallet size={120} />
+          </div>
+          <div className="flex flex-col relative z-10">
+            <span className="text-slate-500 text-sm font-medium mb-1 flex items-center gap-2"><Wallet className="w-4 h-4 text-emerald-500" /> {t.farmCash}</span>
+            <span className={`text-3xl font-bold tracking-tight ${financials.cash < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+              {formatCurrency(financials.cash)}
+            </span>
+          </div>
         </div>
-        <div className="flex flex-col relative z-10">
-          <span className="text-slate-500 text-sm font-medium mb-1 flex items-center gap-2"><Wallet className="w-4 h-4 text-emerald-500" /> Farm Cash</span>
-          <span className={`text-3xl font-bold tracking-tight ${financials.cash < 0 ? 'text-red-600' : 'text-slate-900'}`}>
-            {formatCurrency(financials.cash)}
-          </span>
+        
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-all">
+           <div className="absolute right-0 top-0 opacity-[0.03] transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform">
+            <LandPlot size={120} />
+          </div>
+          <div className="flex flex-col relative z-10">
+            <span className="text-slate-500 text-sm font-medium mb-1 flex items-center gap-2"><LandPlot className="w-4 h-4 text-blue-500" /> {t.bankBalance}</span>
+            <span className={`text-3xl font-bold tracking-tight ${financials.bank < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+              {formatCurrency(financials.bank)}
+            </span>
+          </div>
         </div>
-      </div>
-      
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-all">
-         <div className="absolute right-0 top-0 opacity-[0.03] transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform">
-          <LandPlot size={120} />
-        </div>
-        <div className="flex flex-col relative z-10">
-          <span className="text-slate-500 text-sm font-medium mb-1 flex items-center gap-2"><LandPlot className="w-4 h-4 text-blue-500" /> Bank Balance</span>
-          <span className={`text-3xl font-bold tracking-tight ${financials.bank < 0 ? 'text-red-600' : 'text-slate-900'}`}>
-            {formatCurrency(financials.bank)}
-          </span>
+
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-all">
+           <div className="absolute right-0 top-0 opacity-[0.03] transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform">
+            <Users size={120} />
+          </div>
+          <div className="flex flex-col relative z-10">
+            <span className="text-slate-500 text-sm font-medium mb-1 flex items-center gap-2"><Users className="w-4 h-4 text-orange-500" /> {t.workerAdvances}</span>
+            <span className="text-3xl font-bold tracking-tight text-slate-900">
+              {formatCurrency(financials.totalAdvances)}
+            </span>
+          </div>
         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-all">
-         <div className="absolute right-0 top-0 opacity-[0.03] transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform">
-          <Users size={120} />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {partners.map((p: Partner) => (
+          <div key={p.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex justify-between items-center hover:shadow-md transition-shadow">
+             <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-600 font-bold border border-slate-200">
+                  {p.name.charAt(0)}
+                </div>
+                <div>
+                   <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Partner</p>
+                   <p className="font-bold text-lg text-slate-800">{p.name}</p>
+                </div>
+             </div>
+             <div className="text-right">
+                <p className={`font-mono font-bold text-lg ${financials.partnerBalances[p.id] >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {formatCurrency(financials.partnerBalances[p.id] || 0)}
+                </p>
+                <p className="text-[10px] text-slate-400">{financials.partnerBalances[p.id] >= 0 ? t.invested : t.withdrawn}</p>
+             </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-slate-100">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+            <History className="w-5 h-5 text-slate-400" /> {t.recentActivity}
+          </h3>
+          <button onClick={onViewAll} className="text-emerald-600 text-sm font-medium hover:underline flex items-center">{t.viewAll} <ChevronRight size={16}/></button>
         </div>
-        <div className="flex flex-col relative z-10">
-          <span className="text-slate-500 text-sm font-medium mb-1 flex items-center gap-2"><Users className="w-4 h-4 text-orange-500" /> Worker Advances</span>
-          <span className="text-3xl font-bold tracking-tight text-slate-900">
-            {formatCurrency(financials.totalAdvances)}
-          </span>
-        </div>
+        <TransactionList 
+          transactions={transactions.slice(0, 5)} 
+          seasons={seasons} 
+          partners={partners} 
+          workers={workers}
+          onDelete={onDeleteTransaction}
+          onEdit={onEditTransaction} 
+          readonly
+          lang={lang}
+        />
       </div>
     </div>
+  );
+};
 
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {partners.map((p: Partner) => (
-        <div key={p.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex justify-between items-center hover:shadow-md transition-shadow">
-           <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-600 font-bold border border-slate-200">
-                {p.name.charAt(0)}
-              </div>
-              <div>
-                 <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Partner</p>
-                 <p className="font-bold text-lg text-slate-800">{p.name}</p>
-              </div>
-           </div>
-           <div className="text-right">
-              <p className={`font-mono font-bold text-lg ${financials.partnerBalances[p.id] >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                {formatCurrency(financials.partnerBalances[p.id] || 0)}
-              </p>
-              <p className="text-[10px] text-slate-400">{financials.partnerBalances[p.id] >= 0 ? 'Invested' : 'Withdrawn'}</p>
-           </div>
-        </div>
-      ))}
-    </div>
-
-    <div className="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-slate-100">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-          <History className="w-5 h-5 text-slate-400" /> Recent Activity
-        </h3>
-        <button onClick={onViewAll} className="text-emerald-600 text-sm font-medium hover:underline flex items-center">View All <ChevronRight size={16}/></button>
-      </div>
-      <TransactionList 
-        transactions={transactions.slice(0, 5)} 
-        seasons={seasons} 
-        partners={partners} 
-        workers={workers}
-        onDelete={onDeleteTransaction}
-        onEdit={onEditTransaction} 
-        readonly
-      />
-    </div>
-  </div>
-);
-
-const SeasonsView = ({ seasons, transactions, workers, onAddSeason, onCloseSeason, onDeleteSeason }: any) => {
+const SeasonsView = ({ seasons, transactions, workers, onAddSeason, onCloseSeason, onDeleteSeason, lang }: any) => {
   const [isCreating, setIsCreating] = useState(false);
   const [newSeasonName, setNewSeasonName] = useState('');
+  const t = TRANSLATIONS[lang as Language];
 
   const handleCreateSeason = () => {
     if (!newSeasonName) return;
@@ -224,12 +417,12 @@ const SeasonsView = ({ seasons, transactions, workers, onAddSeason, onCloseSeaso
   return (
     <div className="space-y-6 pb-20 md:pb-0 animate-in fade-in">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-800">Seasons</h2>
+        <h2 className="text-2xl font-bold text-slate-800">{t.seasons}</h2>
         <button 
           onClick={() => setIsCreating(true)}
           className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow-lg shadow-emerald-200 transition-all active:scale-95"
         >
-          <Plus className="w-5 h-5" /> New Season
+          <Plus className="w-5 h-5" /> {t.newSeason}
         </button>
       </div>
 
@@ -245,7 +438,7 @@ const SeasonsView = ({ seasons, transactions, workers, onAddSeason, onCloseSeaso
               onChange={e => setNewSeasonName(e.target.value)}
             />
             <button onClick={handleCreateSeason} className="bg-emerald-600 text-white px-6 rounded-xl font-medium">Create</button>
-            <button onClick={() => setIsCreating(false)} className="text-slate-500 px-4">Cancel</button>
+            <button onClick={() => setIsCreating(false)} className="text-slate-500 px-4">{t.cancel}</button>
           </div>
         </div>
       )}
@@ -259,6 +452,7 @@ const SeasonsView = ({ seasons, transactions, workers, onAddSeason, onCloseSeaso
             workers={workers}
             onCloseSeason={onCloseSeason}
             onDeleteSeason={onDeleteSeason}
+            lang={lang}
           />
         ))}
       </div>
@@ -266,7 +460,81 @@ const SeasonsView = ({ seasons, transactions, workers, onAddSeason, onCloseSeaso
   );
 };
 
-const SeasonCard = ({ season, transactions, workers, onCloseSeason, onDeleteSeason }: any) => {
+const WorkerShareModal = ({ isOpen, onClose, transactions, workerIncomeBase, workerExpenseBase, workerGrossShare, workerExpenseShare, workerNetShare, lang }: any) => {
+    if (!isOpen) return null;
+    const t = TRANSLATIONS[lang as Language];
+
+    return (
+        <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <Calculator className="w-6 h-6 text-amber-600"/> {t.calculationDetails}
+                    </h3>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-500"><X size={20}/></button>
+                </div>
+                <div className="p-6 space-y-8">
+                    {/* Income Section */}
+                    <div>
+                        <h4 className="font-bold text-emerald-700 mb-3 border-b border-emerald-100 pb-2 flex justify-between">
+                            <span>Eligible Income (Included in Share)</span>
+                            <span>{formatCurrency(workerIncomeBase)}</span>
+                        </h4>
+                        <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                             {transactions.filter((t: any) => t.type === 'INCOME' && t.includeInWorkerShare !== false).map((tr: any) => (
+                                 <div key={tr.id} className="flex justify-between text-sm text-slate-600 border-b border-slate-50 py-1">
+                                     <span>{tr.category} ({tr.date})</span>
+                                     <span className="font-mono">{formatCurrency(tr.amount)}</span>
+                                 </div>
+                             ))}
+                             {transactions.filter((t: any) => t.type === 'INCOME' && t.includeInWorkerShare !== false).length === 0 && <p className="text-xs text-slate-400 italic">No eligible income records</p>}
+                        </div>
+                        <div className="mt-2 text-right">
+                             <span className="text-sm font-bold text-emerald-600">20% Share = {formatCurrency(workerGrossShare)}</span>
+                        </div>
+                    </div>
+
+                    {/* Expense Section */}
+                    <div>
+                        <h4 className="font-bold text-rose-700 mb-3 border-b border-rose-100 pb-2 flex justify-between">
+                            <span>Eligible Expense (Included in Share)</span>
+                            <span>{formatCurrency(workerExpenseBase)}</span>
+                        </h4>
+                         <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                             {transactions.filter((t: any) => t.type === 'EXPENSE' && t.includeInWorkerShare !== false).map((tr: any) => (
+                                 <div key={tr.id} className="flex justify-between text-sm text-slate-600 border-b border-slate-50 py-1">
+                                     <span>{tr.category} ({tr.date})</span>
+                                     <span className="font-mono">{formatCurrency(tr.amount)}</span>
+                                 </div>
+                             ))}
+                             {transactions.filter((t: any) => t.type === 'EXPENSE' && t.includeInWorkerShare !== false).length === 0 && <p className="text-xs text-slate-400 italic">No eligible expense records</p>}
+                        </div>
+                        <div className="mt-2 text-right">
+                             <span className="text-sm font-bold text-rose-600">20% Liability = {formatCurrency(workerExpenseShare)}</span>
+                        </div>
+                    </div>
+
+                    {/* Summary */}
+                    <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
+                         <div className="flex justify-between items-center text-lg font-bold text-slate-900">
+                             <span>Net Share Entitlement</span>
+                             <span>{formatCurrency(workerNetShare)}</span>
+                         </div>
+                         <p className="text-xs text-slate-500 mt-1 text-right">(20% Income - 20% Expense)</p>
+                    </div>
+                </div>
+                <div className="p-6 border-t border-slate-100 bg-slate-50 text-right">
+                    <button onClick={onClose} className="px-6 py-2 bg-slate-800 text-white rounded-xl font-medium">Close</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const SeasonCard = ({ season, transactions, workers, onCloseSeason, onDeleteSeason, lang }: any) => {
+  const [showShareDetails, setShowShareDetails] = useState(false);
+  const t = TRANSLATIONS[lang as Language];
+
   const incomeTransactions = transactions.filter((t: Transaction) => t.type === 'INCOME' && t.includeInWorkerShare !== false);
   const expenseTransactions = transactions.filter((t: Transaction) => t.type === 'EXPENSE' && t.includeInWorkerShare !== false);
 
@@ -286,7 +554,12 @@ const SeasonCard = ({ season, transactions, workers, onCloseSeason, onDeleteSeas
   
   const finalPayable = workerNetShare - seasonAdvances;
 
+  const handleDownloadReport = () => {
+    generateSeasonPDF(season, transactions, lang);
+  };
+
   return (
+    <>
     <div className={`bg-white rounded-3xl shadow-sm border ${season.status === 'OPEN' ? 'border-emerald-200' : 'border-slate-200 grayscale'} overflow-hidden transition-all hover:shadow-md`}>
       <div className={`p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${season.status === 'OPEN' ? 'bg-slate-50/50' : 'bg-slate-100'}`}>
         <div>
@@ -302,12 +575,18 @@ const SeasonCard = ({ season, transactions, workers, onCloseSeason, onDeleteSeas
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button 
+             onClick={handleDownloadReport}
+             className="text-sm bg-white text-blue-600 px-4 py-2 rounded-xl border border-blue-100 hover:bg-blue-50 flex items-center gap-2 font-semibold shadow-sm transition-colors"
+          >
+             <Download className="w-4 h-4"/> {t.downloadReport}
+          </button>
           {season.status === 'OPEN' && (
             <button 
               onClick={() => onCloseSeason(season.id)}
               className="text-sm bg-white text-rose-600 px-4 py-2 rounded-xl border border-rose-100 hover:bg-rose-50 flex items-center gap-2 font-semibold shadow-sm transition-colors"
             >
-              <LogOut className="w-4 h-4" /> Close Season
+              <LogOut className="w-4 h-4" /> {t.closeSeason}
             </button>
           )}
           <button 
@@ -315,7 +594,7 @@ const SeasonCard = ({ season, transactions, workers, onCloseSeason, onDeleteSeas
             className="text-sm bg-white text-gray-500 px-4 py-2 rounded-xl border border-gray-200 hover:bg-red-50 hover:text-red-600 hover:border-red-100 flex items-center gap-2 font-semibold shadow-sm transition-colors"
             title="Delete Season"
           >
-            <Trash2 className="w-4 h-4" /> Delete
+            <Trash2 className="w-4 h-4" /> {t.delete}
           </button>
         </div>
       </div>
@@ -323,20 +602,20 @@ const SeasonCard = ({ season, transactions, workers, onCloseSeason, onDeleteSeas
       <div className={`p-6 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-8 ${season.status === 'CLOSED' ? 'opacity-70' : ''}`}>
         <div className="space-y-6">
           <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-            <LandPlot className="w-4 h-4" /> Farm Performance
+            <LandPlot className="w-4 h-4" /> {t.farmPerformance}
           </h4>
           <div className="space-y-3">
             <div className="flex justify-between items-center p-3 rounded-xl bg-emerald-50/50 border border-emerald-100/50">
-              <span className="text-slate-600 font-medium text-sm">Total Revenue</span>
+              <span className="text-slate-600 font-medium text-sm">{t.totalRevenue}</span>
               <span className="font-bold text-emerald-600 text-lg">{formatCurrency(totalIncome)}</span>
             </div>
             <div className="flex justify-between items-center p-3 rounded-xl bg-rose-50/50 border border-rose-100/50">
-              <span className="text-slate-600 font-medium text-sm">Total Expenses</span>
+              <span className="text-slate-600 font-medium text-sm">{t.totalExpenses}</span>
               <span className="font-bold text-rose-600 text-lg">{formatCurrency(totalExpense)}</span>
             </div>
           </div>
           <div className="flex justify-between pt-4 border-t border-dashed border-slate-200">
-            <span className="font-bold text-slate-900">Net Farm Profit</span>
+            <span className="font-bold text-slate-900">{t.netProfit}</span>
             <span className={`font-bold text-2xl ${(totalIncome - totalExpense) >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
               {formatCurrency(totalIncome - totalExpense)}
             </span>
@@ -346,13 +625,14 @@ const SeasonCard = ({ season, transactions, workers, onCloseSeason, onDeleteSeas
         <div className="bg-amber-50/50 p-6 rounded-2xl space-y-5 border border-amber-100/50">
           <div className="flex justify-between items-start">
              <h4 className="text-xs font-bold text-amber-800 uppercase tracking-widest flex items-center gap-2">
-               <Users className="w-4 h-4" /> Worker Share (20%)
+               <Users className="w-4 h-4" /> {t.workerShare}
              </h4>
-             { (totalIncome !== workerIncomeBase || totalExpense !== workerExpenseBase) && (
-               <span className="text-[10px] bg-white px-2 py-1 rounded-md text-amber-600 border border-amber-100 font-medium" title="Some transactions were excluded from this calculation">
-                 *Adjusted Base
-               </span>
-             )}
+             <button 
+                onClick={() => setShowShareDetails(true)} 
+                className="text-[10px] bg-white px-2 py-1 rounded-md text-amber-700 border border-amber-200 font-bold hover:bg-amber-100 flex items-center gap-1"
+             >
+                <FileText size={10} /> Details
+             </button>
           </div>
           
           <div className="text-sm space-y-3">
@@ -376,7 +656,7 @@ const SeasonCard = ({ season, transactions, workers, onCloseSeason, onDeleteSeas
                <span>-{formatCurrency(seasonAdvances)}</span>
              </div>
              <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-amber-100">
-               <span className="font-bold text-slate-800">Final Payable</span>
+               <span className="font-bold text-slate-800">{t.finalPayable}</span>
                <span className={`font-black text-xl ${finalPayable >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                  {formatCurrency(finalPayable)}
                </span>
@@ -385,12 +665,26 @@ const SeasonCard = ({ season, transactions, workers, onCloseSeason, onDeleteSeas
         </div>
       </div>
     </div>
+    
+    <WorkerShareModal 
+        isOpen={showShareDetails}
+        onClose={() => setShowShareDetails(false)}
+        transactions={transactions}
+        workerIncomeBase={workerIncomeBase}
+        workerExpenseBase={workerExpenseBase}
+        workerGrossShare={workerGrossShare}
+        workerExpenseShare={workerExpenseShare}
+        workerNetShare={workerNetShare}
+        lang={lang}
+    />
+    </>
   );
 };
 
-const WorkersView = ({ workers, transactions, onAddWorker, onDeleteWorker }: any) => {
+const WorkersView = ({ workers, transactions, onAddWorker, onDeleteWorker, lang }: any) => {
   const [isAdding, setIsAdding] = useState(false);
   const [newWorker, setNewWorker] = useState<Partial<Worker>>({});
+  const t = TRANSLATIONS[lang as Language];
 
   const handleAdd = () => {
     if (!newWorker.name) return;
@@ -407,12 +701,12 @@ const WorkersView = ({ workers, transactions, onAddWorker, onDeleteWorker }: any
   return (
     <div className="space-y-6 pb-20 md:pb-0 animate-in fade-in">
        <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-800">Workers (Bhaiya Ji)</h2>
+        <h2 className="text-2xl font-bold text-slate-800">{t.workers}</h2>
         <button 
           onClick={() => setIsAdding(true)}
           className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow-lg shadow-emerald-200 transition-all active:scale-95"
         >
-          <Plus className="w-5 h-5" /> Add Worker
+          <Plus className="w-5 h-5" /> {t.addWorker}
         </button>
       </div>
 
@@ -459,7 +753,7 @@ const WorkersView = ({ workers, transactions, onAddWorker, onDeleteWorker }: any
               </div>
               <div className="flex flex-col items-end gap-2">
                 <div className="text-right">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Total Debt</p>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{t.totalDebt}</p>
                   <p className="text-xl font-bold text-orange-600">{formatCurrency(workerAdvances)}</p>
                 </div>
                 <button 
@@ -479,19 +773,20 @@ const WorkersView = ({ workers, transactions, onAddWorker, onDeleteWorker }: any
   );
 };
 
-const TransactionManager = ({ transactions, seasons, partners, workers, categories, onAddTransaction, onUpdateTransaction, onDeleteTransaction, onAddCategory, onNotify }: any) => {
+const TransactionManager = ({ transactions, seasons, partners, workers, categories, onAddTransaction, onUpdateTransaction, onDeleteTransaction, onAddCategory, onNotify, lang }: any) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const t = TRANSLATIONS[lang as Language];
 
   return (
     <div className="space-y-6 pb-20 md:pb-0 animate-in fade-in">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-800">Transactions</h2>
+        <h2 className="text-2xl font-bold text-slate-800">{t.transactions}</h2>
         <button 
           onClick={() => { setEditingId(null); setIsFormOpen(true); }}
           className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow-lg shadow-emerald-200 transition-all active:scale-95"
         >
-          <Plus className="w-5 h-5" /> Add New
+          <Plus className="w-5 h-5" /> {t.addNew}
         </button>
       </div>
 
@@ -514,6 +809,7 @@ const TransactionManager = ({ transactions, seasons, partners, workers, categori
           categories={categories}
           onAddCategory={onAddCategory}
           onNotify={onNotify}
+          lang={lang}
         />
       )}
 
@@ -528,12 +824,14 @@ const TransactionManager = ({ transactions, seasons, partners, workers, categori
           window.scrollTo(0, 0);
         }}
         onDelete={onDeleteTransaction}
+        lang={lang}
       />
     </div>
   );
 };
 
-const TransactionForm = ({ initialData, onSave, onCancel, seasons, workers, partners, categories, onAddCategory, onNotify }: any) => {
+const TransactionForm = ({ initialData, onSave, onCancel, seasons, workers, partners, categories, onAddCategory, onNotify, lang }: any) => {
+  const t = TRANSLATIONS[lang as Language];
   const [formData, setFormData] = useState<Partial<Transaction>>(initialData || {
     date: new Date().toISOString().split('T')[0],
     paymentSource: 'FARM_CASH',
@@ -587,7 +885,7 @@ const TransactionForm = ({ initialData, onSave, onCancel, seasons, workers, part
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
         <div>
-          <label className="block text-sm font-semibold text-slate-500 mb-2">Date</label>
+          <label className="block text-sm font-semibold text-slate-500 mb-2">{t.date}</label>
           <input 
             type="date" 
             required
@@ -597,7 +895,7 @@ const TransactionForm = ({ initialData, onSave, onCancel, seasons, workers, part
           />
         </div>
         <div>
-          <label className="block text-sm font-semibold text-slate-500 mb-2">Amount (₹)</label>
+          <label className="block text-sm font-semibold text-slate-500 mb-2">{t.amount} (₹)</label>
           <div className="relative">
             <span className="absolute left-4 top-3.5 text-slate-400">₹</span>
             <input 
@@ -629,7 +927,7 @@ const TransactionForm = ({ initialData, onSave, onCancel, seasons, workers, part
         </div>
 
         <div>
-           <label className="block text-sm font-semibold text-slate-500 mb-2">Category</label>
+           <label className="block text-sm font-semibold text-slate-500 mb-2">{t.category}</label>
            {!isAddingCategory ? (
              <select 
                className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 font-medium cursor-pointer"
@@ -753,7 +1051,7 @@ const TransactionForm = ({ initialData, onSave, onCancel, seasons, workers, part
         </div>
 
         <div className="md:col-span-2">
-          <label className="block text-sm font-semibold text-slate-500 mb-2">Description</label>
+          <label className="block text-sm font-semibold text-slate-500 mb-2">{t.description}</label>
           <textarea 
             className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900"
             rows={2}
@@ -764,22 +1062,65 @@ const TransactionForm = ({ initialData, onSave, onCancel, seasons, workers, part
       </div>
 
       <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">
-        <button type="button" onClick={onCancel} className="px-6 py-3 text-slate-600 font-semibold rounded-xl hover:bg-slate-50 transition-colors">Cancel</button>
+        <button type="button" onClick={onCancel} className="px-6 py-3 text-slate-600 font-semibold rounded-xl hover:bg-slate-50 transition-colors">{t.cancel}</button>
         <button type="submit" className="px-8 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 flex items-center gap-2 transition-all active:scale-95">
-          <Save className="w-5 h-5" /> Save Record
+          <Save className="w-5 h-5" /> {t.saveRecord}
         </button>
       </div>
     </form>
   );
 };
 
-const TransactionList = ({ transactions, seasons, partners, workers, onDelete, onEdit, readonly }: any) => {
-  const [filterType, setFilterType] = useState<string>('ALL');
+const TransactionList = ({ transactions, seasons, partners, workers, onDelete, onEdit, readonly, lang }: any) => {
+  const t = TRANSLATIONS[lang as Language];
   
-  const filtered = transactions.filter((t: Transaction) => {
-    if (filterType !== 'ALL' && t.type !== filterType) return false;
-    return true;
-  });
+  // -- Filter State --
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterType, setFilterType] = useState<string>('ALL');
+  const [search, setSearch] = useState('');
+  const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [entityFilter, setEntityFilter] = useState(''); // ID of partner or worker
+  const [sortOrder, setSortOrder] = useState<'DATE_DESC' | 'DATE_ASC' | 'AMT_HIGH' | 'AMT_LOW'>('DATE_DESC');
+
+  // -- Filtering Logic --
+  const filtered = useMemo(() => {
+    return transactions.filter((t: Transaction) => {
+      // Type Filter
+      if (filterType !== 'ALL' && t.type !== filterType) return false;
+      
+      // Search
+      if (search && !t.category.toLowerCase().includes(search.toLowerCase()) && !t.description?.toLowerCase().includes(search.toLowerCase())) return false;
+      
+      // Date Range
+      if (dateRange.start && t.date < dateRange.start) return false;
+      if (dateRange.end && t.date > dateRange.end) return false;
+
+      // Entity Filter
+      if (entityFilter) {
+          const involvesEntity = t.workerId === entityFilter || t.partnerId === entityFilter || t.payerPartnerId === entityFilter;
+          if (!involvesEntity) return false;
+      }
+
+      return true;
+    }).sort((a: Transaction, b: Transaction) => {
+        if (sortOrder === 'DATE_DESC') return new Date(b.date).getTime() - new Date(a.date).getTime();
+        if (sortOrder === 'DATE_ASC') return new Date(a.date).getTime() - new Date(b.date).getTime();
+        if (sortOrder === 'AMT_HIGH') return b.amount - a.amount;
+        if (sortOrder === 'AMT_LOW') return a.amount - b.amount;
+        return 0;
+    });
+  }, [transactions, filterType, search, dateRange, entityFilter, sortOrder]);
+
+  // -- Summary Stats for Filtered Data --
+  const summary = useMemo(() => {
+     let inc = 0;
+     let exp = 0;
+     filtered.forEach((t: Transaction) => {
+         if(t.type === 'INCOME' || t.type === 'PARTNER_CONTRIBUTION') inc += t.amount;
+         else exp += t.amount;
+     });
+     return { inc, exp, net: inc - exp };
+  }, [filtered]);
 
   const getTypeStyle = (type: TransactionType) => {
     switch(type) {
@@ -800,19 +1141,103 @@ const TransactionList = ({ transactions, seasons, partners, workers, onDelete, o
     return 'Unknown';
   };
 
+  const resetFilters = () => {
+      setFilterType('ALL');
+      setSearch('');
+      setDateRange({ start: '', end: '' });
+      setEntityFilter('');
+      setSortOrder('DATE_DESC');
+  };
+
   return (
     <div>
       {!readonly && (
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
-          {['ALL', 'INCOME', 'EXPENSE', 'WORKER_ADVANCE'].map(type => (
-            <button 
-              key={type}
-              onClick={() => setFilterType(type)} 
-              className={`px-5 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${filterType === type ? 'bg-slate-800 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-            >
-              {type === 'ALL' ? 'All Transactions' : type.replace('_', ' ')}
-            </button>
-          ))}
+        <div className="mb-6 space-y-4">
+             {/* Search and Toggle Row */}
+             <div className="flex gap-2">
+                 <div className="relative flex-1">
+                    <Search className="absolute left-3 top-3.5 text-slate-400 w-4 h-4" />
+                    <input 
+                        type="text" 
+                        placeholder={t.searchPlaceholder}
+                        className="w-full pl-9 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-medium"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                    />
+                 </div>
+                 <button 
+                    onClick={() => setShowFilters(!showFilters)}
+                    className={`px-4 rounded-xl border flex items-center gap-2 font-medium transition-colors ${showFilters ? 'bg-slate-800 text-white border-slate-800' : 'bg-white border-slate-200 text-slate-600'}`}
+                 >
+                     <Filter size={18} /> <span className="hidden md:inline">{t.filters}</span>
+                 </button>
+                 <button 
+                    onClick={() => {
+                        const cycles: any[] = ['DATE_DESC', 'DATE_ASC', 'AMT_HIGH', 'AMT_LOW'];
+                        const next = cycles[(cycles.indexOf(sortOrder) + 1) % 4];
+                        setSortOrder(next);
+                    }}
+                    className="px-4 rounded-xl border border-slate-200 bg-white text-slate-600 flex items-center gap-2 font-medium hover:bg-slate-50"
+                 >
+                     <ArrowUpDown size={18} />
+                 </button>
+             </div>
+
+             {/* Expanded Filters Panel */}
+             {showFilters && (
+                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-4 animate-in slide-in-from-top-2">
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">{t.startDate}</label>
+                          <input type="date" className="w-full p-2 rounded-lg border border-slate-200 text-sm" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">{t.endDate}</label>
+                          <input type="date" className="w-full p-2 rounded-lg border border-slate-200 text-sm" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">{t.filterByEntity}</label>
+                          <select className="w-full p-2 rounded-lg border border-slate-200 text-sm" value={entityFilter} onChange={e => setEntityFilter(e.target.value)}>
+                              <option value="">All People</option>
+                              <optgroup label="Workers">
+                                  {workers.map((w: Worker) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                              </optgroup>
+                              <optgroup label="Partners">
+                                  {partners.map((p: Partner) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              </optgroup>
+                          </select>
+                      </div>
+                      <div className="flex items-end">
+                          <button onClick={resetFilters} className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg text-sm flex items-center justify-center gap-2">
+                             <XCircle size={16} /> {t.reset}
+                          </button>
+                      </div>
+                 </div>
+             )}
+             
+             {/* Type Tabs */}
+             <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                {['ALL', 'INCOME', 'EXPENSE', 'WORKER_ADVANCE'].map(type => (
+                    <button 
+                    key={type}
+                    onClick={() => setFilterType(type)} 
+                    className={`px-5 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${filterType === type ? 'bg-slate-800 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                    >
+                    {type === 'ALL' ? 'All Transactions' : type.replace('_', ' ')}
+                    </button>
+                ))}
+             </div>
+
+             {/* Live Summary Card */}
+             {(filterType !== 'ALL' || search || dateRange.start || entityFilter) && (
+                 <div className="bg-gradient-to-r from-emerald-50 to-blue-50 p-4 rounded-xl border border-emerald-100 flex justify-between items-center shadow-sm">
+                     <span className="font-bold text-slate-700 text-sm">{t.filteredTotal}:</span>
+                     <div className="flex gap-4 text-sm">
+                         <span className="text-emerald-700 font-bold">+{formatCurrency(summary.inc)}</span>
+                         <span className="text-rose-700 font-bold">-{formatCurrency(summary.exp)}</span>
+                         <span className={`font-black ${summary.net >= 0 ? 'text-slate-800' : 'text-red-600'}`}>= {formatCurrency(summary.net)}</span>
+                     </div>
+                 </div>
+             )}
         </div>
       )}
 
@@ -870,11 +1295,11 @@ const TransactionList = ({ transactions, seasons, partners, workers, onDelete, o
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50/50 border-b border-slate-100">
-              <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider">Date</th>
+              <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider">{t.date}</th>
               <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider">Type</th>
               <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider">Details</th>
               <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider">Source</th>
-              <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">Amount</th>
+              <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">{t.amount}</th>
               {!readonly && <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>}
             </tr>
           </thead>
@@ -931,9 +1356,11 @@ const TransactionList = ({ transactions, seasons, partners, workers, onDelete, o
   );
 };
 
-const PartnersView = ({ partners, transactions, financials }: any) => (
+const PartnersView = ({ partners, transactions, financials, lang }: any) => {
+  const t = TRANSLATIONS[lang as Language];
+  return (
   <div className="space-y-6 pb-20 md:pb-0 animate-in fade-in">
-     <h2 className="text-2xl font-bold text-slate-800">Partner Accounts</h2>
+     <h2 className="text-2xl font-bold text-slate-800">{t.partners}</h2>
      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
        {partners.map((partner: Partner) => {
          const directContribution = transactions
@@ -1023,17 +1450,35 @@ const PartnersView = ({ partners, transactions, financials }: any) => (
      </div>
   </div>
 );
+};
 
-const DataManagementView = ({ onImport, onExport, seasons, onExportSeason }: any) => {
+const DataManagementView = ({ onImport, onExport, seasons, onExportSeason, lang }: any) => {
+  const t = TRANSLATIONS[lang as Language];
   return (
     <div className="space-y-6 pb-20 md:pb-0 animate-in fade-in">
        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-         <Database className="w-6 h-6 text-emerald-600" /> Data Backup & Restore
+         <Database className="w-6 h-6 text-emerald-600" /> {t.data}
        </h2>
+
+       {/* Guide for Sync */}
+       <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
+          <h3 className="flex items-center gap-2 font-bold text-blue-900 text-lg mb-2">
+            <Share2 className="w-5 h-5" /> How to sync between Father & Uncle's mobile?
+          </h3>
+          <p className="text-sm text-blue-800 mb-4 leading-relaxed">
+            Since this app works offline, data is stored on your phone. To share data:
+          </p>
+          <ol className="list-decimal list-inside text-sm text-blue-800 space-y-2 font-medium">
+             <li>Click <strong>"Backup for WhatsApp"</strong> below. It will download a file.</li>
+             <li>Send that file to your Uncle via WhatsApp.</li>
+             <li>Uncle downloads the file on his phone.</li>
+             <li>Uncle opens this app, goes to this Data tab, clicks <strong>"Restore Data"</strong> and selects the file.</li>
+          </ol>
+       </div>
        
        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="p-6 bg-slate-50 border-b border-slate-200">
-             <h3 className="font-bold text-slate-800 text-lg mb-1">Backup Options</h3>
+             <h3 className="font-bold text-slate-800 text-lg mb-1">{t.backupRestore}</h3>
              <p className="text-sm text-slate-600">
                Save your data securely. Data is stored on your device. Backup regularly.
              </p>
@@ -1044,18 +1489,18 @@ const DataManagementView = ({ onImport, onExport, seasons, onExportSeason }: any
              <div className="space-y-4">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="bg-blue-50 p-3 rounded-full text-blue-600">
-                    <Download className="w-6 h-6" />
+                    <Share2 className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-slate-800">1. Full Backup</h4>
-                    <p className="text-xs text-slate-500">Download everything (All Seasons)</p>
+                    <h4 className="font-bold text-slate-800">1. {t.shareWhatsapp}</h4>
+                    <p className="text-xs text-slate-500">Download file to send via WhatsApp</p>
                   </div>
                 </div>
                 <button 
                   onClick={onExport}
                   className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-blue-200 active:scale-[0.98]"
                 >
-                  <FileJson className="w-5 h-5" /> Download Full Data
+                  <Share2 className="w-5 h-5" /> Backup for WhatsApp
                 </button>
              </div>
 
@@ -1067,7 +1512,7 @@ const DataManagementView = ({ onImport, onExport, seasons, onExportSeason }: any
                   </div>
                   <div>
                     <h4 className="font-bold text-slate-800">2. Restore Data</h4>
-                    <p className="text-xs text-slate-500">Load previously saved file</p>
+                    <p className="text-xs text-slate-500">Select file received from WhatsApp</p>
                   </div>
                 </div>
                 <label className="w-full py-4 bg-white border-2 border-dashed border-orange-200 hover:border-orange-500 text-orange-600 font-semibold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all hover:bg-orange-50 active:scale-[0.98]">
@@ -1109,6 +1554,11 @@ const DataManagementView = ({ onImport, onExport, seasons, onExportSeason }: any
 
 const App = () => {
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'TRANSACTIONS' | 'SEASONS' | 'WORKERS' | 'PARTNERS' | 'DATA'>('DASHBOARD');
+  const [lang, setLang] = useState<Language>(() => (localStorage.getItem('agri_lang') as Language) || 'EN');
+
+  useEffect(() => {
+    localStorage.setItem('agri_lang', lang);
+  }, [lang]);
   
   const [seasons, setSeasons] = useState<Season[]>(() => {
     try {
@@ -1392,6 +1842,7 @@ const App = () => {
           onDeleteTransaction={setDeleteId}
           onEditTransaction={(id: string) => { setActiveTab('TRANSACTIONS'); }} 
           onViewAll={() => setActiveTab('TRANSACTIONS')}
+          lang={lang}
         />
       );
       case 'TRANSACTIONS': return (
@@ -1406,6 +1857,7 @@ const App = () => {
           onDeleteTransaction={setDeleteId}
           onAddCategory={handleAddCategory}
           onNotify={showNotification}
+          lang={lang}
         />
       );
       case 'SEASONS': return (
@@ -1416,6 +1868,7 @@ const App = () => {
           onAddSeason={handleAddSeason}
           onCloseSeason={handleCloseSeason}
           onDeleteSeason={handleDeleteSeason}
+          lang={lang}
         />
       );
       case 'WORKERS': return (
@@ -1424,20 +1877,24 @@ const App = () => {
           transactions={transactions} 
           onAddWorker={handleAddWorker}
           onDeleteWorker={handleDeleteWorker}
+          lang={lang}
         />
       );
-      case 'PARTNERS': return <PartnersView partners={partners} transactions={transactions} financials={financials} />;
+      case 'PARTNERS': return <PartnersView partners={partners} transactions={transactions} financials={financials} lang={lang} />;
       case 'DATA': return (
         <DataManagementView 
            onImport={handleImportData} 
            onExport={handleExportData} 
            seasons={seasons}
            onExportSeason={handleExportSeason}
+           lang={lang}
         />
       );
       default: return null;
     }
   };
+
+  const t = TRANSLATIONS[lang];
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-slate-50 font-sans text-slate-900 selection:bg-emerald-200">
@@ -1463,44 +1920,53 @@ const App = () => {
           <Sprout className="w-6 h-6 text-emerald-400" />
           <h1 className="text-lg font-bold tracking-tight">AgriBooks</h1>
         </div>
-        <button onClick={() => setActiveTab('DATA')} className="text-slate-300 hover:text-white flex flex-col items-center">
-          <Database className="w-5 h-5" />
-          <span className="text-[10px]">Data</span>
-        </button>
+        <div className="flex items-center gap-4">
+             <button onClick={() => setLang(l => l === 'EN' ? 'GU' : 'EN')} className="flex items-center gap-1 text-xs font-bold bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
+                <Languages size={14} /> {lang}
+             </button>
+            <button onClick={() => setActiveTab('DATA')} className="text-slate-300 hover:text-white flex flex-col items-center">
+                <Database className="w-5 h-5" />
+            </button>
+        </div>
       </div>
 
       {/* Sidebar (Desktop) */}
-      <div className="hidden md:flex flex-col bg-slate-900 text-white w-72 flex-shrink-0 h-screen sticky top-0 border-r border-slate-800">
-        <div className="p-8 flex items-center gap-3">
-          <div className="bg-emerald-500 p-2 rounded-xl text-white">
-            <Sprout className="w-6 h-6" />
-          </div>
-          <h1 className="text-xl font-bold tracking-tight">AgriBooks</h1>
+      <div className="hidden md:flex flex-col bg-slate-900 text-white w-72 flex-shrink-0 h-screen sticky top-0 border-r border-slate-800 print:hidden">
+        <div className="p-8 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-emerald-500 p-2 rounded-xl text-white">
+                <Sprout className="w-6 h-6" />
+              </div>
+              <h1 className="text-xl font-bold tracking-tight">AgriBooks</h1>
+            </div>
+            <button onClick={() => setLang(l => l === 'EN' ? 'GU' : 'EN')} className="flex items-center gap-1 text-xs font-bold bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-700 transition-colors">
+                <Languages size={14} /> {lang}
+            </button>
         </div>
         <nav className="px-4 py-2 space-y-2 flex-1">
-          <NavButton icon={<PieChart />} label="Dashboard" active={activeTab === 'DASHBOARD'} onClick={() => setActiveTab('DASHBOARD')} />
-          <NavButton icon={<DollarSign />} label="Transactions" active={activeTab === 'TRANSACTIONS'} onClick={() => setActiveTab('TRANSACTIONS')} />
-          <NavButton icon={<Calendar />} label="Seasons" active={activeTab === 'SEASONS'} onClick={() => setActiveTab('SEASONS')} />
-          <NavButton icon={<Users />} label="Workers" active={activeTab === 'WORKERS'} onClick={() => setActiveTab('WORKERS')} />
-          <NavButton icon={<TrendingUp />} label="Partners" active={activeTab === 'PARTNERS'} onClick={() => setActiveTab('PARTNERS')} />
+          <NavButton icon={<PieChart />} label={t.dashboard} active={activeTab === 'DASHBOARD'} onClick={() => setActiveTab('DASHBOARD')} />
+          <NavButton icon={<DollarSign />} label={t.transactions} active={activeTab === 'TRANSACTIONS'} onClick={() => setActiveTab('TRANSACTIONS')} />
+          <NavButton icon={<Calendar />} label={t.seasons} active={activeTab === 'SEASONS'} onClick={() => setActiveTab('SEASONS')} />
+          <NavButton icon={<Users />} label={t.workers} active={activeTab === 'WORKERS'} onClick={() => setActiveTab('WORKERS')} />
+          <NavButton icon={<TrendingUp />} label={t.partners} active={activeTab === 'PARTNERS'} onClick={() => setActiveTab('PARTNERS')} />
           <div className="pt-6 mt-6 border-t border-slate-800">
-             <NavButton icon={<Database />} label="Backup / Restore" active={activeTab === 'DATA'} onClick={() => setActiveTab('DATA')} />
+             <NavButton icon={<Database />} label={t.data} active={activeTab === 'DATA'} onClick={() => setActiveTab('DATA')} />
           </div>
         </nav>
         <div className="p-6 bg-slate-950/50">
-          <p className="text-xs text-slate-500">v1.4 &bull; Offline Ready</p>
+          <p className="text-xs text-slate-500">v1.5 &bull; Offline Ready</p>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 p-4 md:p-10 overflow-y-auto">
+      <div className="flex-1 p-4 md:p-10 overflow-y-auto print:p-0 print:overflow-visible">
         <div className="max-w-6xl mx-auto">
           {renderContent()}
         </div>
       </div>
 
       {/* Mobile Bottom Nav */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2 z-20 pb-safe shadow-[0_-4px_10px_-1px_rgba(0,0,0,0.05)]">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2 z-20 pb-safe shadow-[0_-4px_10px_-1px_rgba(0,0,0,0.05)] print:hidden">
         <MobileNavBtn icon={<PieChart />} label="Home" active={activeTab === 'DASHBOARD'} onClick={() => setActiveTab('DASHBOARD')} />
         <MobileNavBtn icon={<DollarSign />} label="Trans" active={activeTab === 'TRANSACTIONS'} onClick={() => setActiveTab('TRANSACTIONS')} />
         <MobileNavBtn icon={<Calendar />} label="Seasons" active={activeTab === 'SEASONS'} onClick={() => setActiveTab('SEASONS')} />
