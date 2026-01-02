@@ -40,7 +40,8 @@ import {
   Filter,
   ArrowUpDown,
   XCircle,
-  GitMerge
+  GitMerge,
+  ArrowRight
 } from 'lucide-react';
 
 // --- Types ---
@@ -310,6 +311,75 @@ const MobileNavBtn = ({ icon, label, active, onClick }: any) => (
   </button>
 );
 
+const TransactionList = ({ transactions, seasons, partners, workers, onDelete, onEdit, readonly, lang }: any) => {
+  const t = TRANSLATIONS[lang as Language];
+
+  if (!transactions || transactions.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-slate-50">
+        <FileJson size={32} className="mb-2 opacity-50"/>
+        <p className="text-sm">No transactions found</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {transactions.map((tr: Transaction) => {
+        const season = seasons.find((s: Season) => s.id === tr.seasonId);
+        const partner = partners.find((p: Partner) => p.id === tr.payerPartnerId);
+        const worker = workers.find((w: Worker) => w.id === tr.workerId);
+
+        let sourceLabel = '';
+        if (tr.paymentSource === 'FARM_CASH') sourceLabel = t.farmCash;
+        else if (tr.paymentSource === 'FARM_BANK') sourceLabel = t.bankBalance;
+        else if (tr.paymentSource === 'PARTNER') sourceLabel = partner?.name || 'Partner';
+
+        const isIncome = tr.type === 'INCOME' || tr.type === 'PARTNER_CONTRIBUTION';
+
+        return (
+          <div key={tr.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+             <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
+                <div className="flex gap-4 overflow-hidden">
+                   <div className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center ${isIncome ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+                      {isIncome ? <ArrowUpDown size={18} /> : <ArrowRight size={18} />}
+                   </div>
+                   <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-slate-800 text-sm truncate">{tr.category}</h4>
+                        {tr.paymentSource === 'PARTNER' && <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 text-[10px] font-bold border border-purple-200">Paid by {partner?.name}</span>}
+                      </div>
+                      <p className="text-xs text-slate-500 truncate">{tr.description || 'No description'}</p>
+                      
+                      <div className="flex flex-wrap gap-2 mt-2">
+                         <span className="text-[10px] flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded text-slate-500 font-medium"><Calendar size={10}/> {tr.date}</span>
+                         <span className="text-[10px] flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded text-slate-500 font-medium">{sourceLabel}</span>
+                         {season && <span className="text-[10px] flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded text-emerald-700 font-medium border border-emerald-100"><Sprout size={10}/> {season.name}</span>}
+                         {worker && <span className="text-[10px] flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded text-amber-700 font-medium border border-amber-100"><UserCheck size={10}/> {worker.name}</span>}
+                      </div>
+                   </div>
+                </div>
+
+                <div className="flex items-center justify-between sm:justify-end gap-4 pl-14 sm:pl-0">
+                   <span className={`font-mono font-bold text-lg ${isIncome ? 'text-emerald-600' : 'text-slate-900'}`}>
+                      {isIncome ? '+' : '-'} {formatCurrency(tr.amount)}
+                   </span>
+                   
+                   {!readonly && (
+                     <div className="flex gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => onEdit(tr)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"><Edit size={16}/></button>
+                        <button onClick={() => onDelete(tr.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg"><Trash2 size={16}/></button>
+                     </div>
+                   )}
+                </div>
+             </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 // --- View Components ---
 
 const Dashboard = ({ financials, transactions, seasons, partners, workers, onDeleteTransaction, onEditTransaction, onViewAll, lang }: any) => {
@@ -398,7 +468,7 @@ const Dashboard = ({ financials, transactions, seasons, partners, workers, onDel
   );
 };
 
-const SeasonsView = ({ seasons, transactions, workers, onAddSeason, onCloseSeason, onDeleteSeason, lang }: any) => {
+const SeasonsView = ({ seasons, transactions, workers, partners, onAddSeason, onCloseSeason, onDeleteSeason, onUpdateTransaction, lang }: any) => {
   const [isCreating, setIsCreating] = useState(false);
   const [newSeasonName, setNewSeasonName] = useState('');
   const t = TRANSLATIONS[lang as Language];
@@ -451,8 +521,10 @@ const SeasonsView = ({ seasons, transactions, workers, onAddSeason, onCloseSeaso
             season={season} 
             transactions={transactions.filter((t: Transaction) => t.seasonId === season.id)}
             workers={workers}
+            partners={partners}
             onCloseSeason={onCloseSeason}
             onDeleteSeason={onDeleteSeason}
+            onUpdateTransaction={onUpdateTransaction}
             lang={lang}
           />
         ))}
@@ -461,78 +533,166 @@ const SeasonsView = ({ seasons, transactions, workers, onAddSeason, onCloseSeaso
   );
 };
 
-const WorkerShareModal = ({ isOpen, onClose, transactions, workerIncomeBase, workerExpenseBase, workerGrossShare, workerExpenseShare, workerNetShare, lang }: any) => {
+const WorkerShareModal = ({ isOpen, onClose, transactions, partners, season, onUpdateTransaction, workerIncomeBase, workerExpenseBase, workerGrossShare, workerExpenseShare, workerNetShare, lang }: any) => {
     if (!isOpen) return null;
     const t = TRANSLATIONS[lang as Language];
 
+    const generateSharePDF = () => {
+        const doc = new jsPDF();
+        
+        doc.setFontSize(18);
+        doc.setTextColor(6, 78, 59);
+        doc.text("Worker Share Calculation", 14, 20);
+        doc.setFontSize(12);
+        doc.setTextColor(0,0,0);
+        doc.text(`Season: ${season.name}`, 14, 28);
+        doc.text(`Calculated on: ${new Date().toLocaleDateString()}`, 14, 34);
+
+        // Summary
+        doc.setFillColor(245, 255, 250);
+        doc.rect(14, 40, 180, 45, 'FD');
+        doc.setFontSize(11);
+        doc.text(`Eligible Income (20%): ${formatCurrency(workerIncomeBase)}`, 20, 50);
+        doc.text(`Eligible Expense (20%): ${formatCurrency(workerExpenseBase)}`, 20, 58);
+        doc.text(`Net Share Entitlement: ${formatCurrency(workerNetShare)}`, 20, 75);
+
+        // Details Table
+        const rows = transactions.map((tr: Transaction) => {
+             const partner = partners.find((p: Partner) => p.id === tr.payerPartnerId);
+             const source = tr.paymentSource === 'PARTNER' ? `Partner: ${partner?.name}` : tr.paymentSource.replace('FARM_', 'Farm ');
+             return [
+                 tr.date,
+                 tr.category,
+                 source,
+                 tr.amount.toLocaleString('en-IN'),
+                 tr.type,
+                 tr.includeInWorkerShare !== false ? 'Included' : 'Excluded'
+             ];
+        });
+
+        autoTable(doc, {
+            startY: 90,
+            head: [['Date', 'Category', 'Paid By', 'Amount', 'Type', 'Status']],
+            body: rows,
+            headStyles: { fillColor: [6, 78, 59] },
+        });
+
+        doc.save(`WorkerShare_${season.name}.pdf`);
+    };
+
+    const TransactionRow = ({ tr }: { tr: Transaction }) => {
+        const partner = partners.find((p: Partner) => p.id === tr.payerPartnerId);
+        const sourceLabel = tr.paymentSource === 'PARTNER' 
+            ? <span className="text-purple-700 bg-purple-50 px-2 py-0.5 rounded text-[10px] border border-purple-100 font-bold">{partner?.name}</span> 
+            : null;
+
+        return (
+            <div className={`flex items-center justify-between p-3 rounded-xl border mb-2 transition-all ${tr.includeInWorkerShare !== false ? 'bg-white border-slate-100' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                <div className="flex items-center gap-3 overflow-hidden">
+                    <input 
+                        type="checkbox" 
+                        checked={tr.includeInWorkerShare !== false}
+                        onChange={(e) => onUpdateTransaction({ ...tr, includeInWorkerShare: e.target.checked })}
+                        className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500 border-gray-300 cursor-pointer flex-shrink-0"
+                    />
+                    <div className="flex flex-col min-w-0">
+                        <div className="flex items-center gap-2">
+                             <span className={`text-sm font-bold truncate ${tr.includeInWorkerShare !== false ? 'text-slate-700' : 'text-slate-400 line-through'}`}>
+                                 {tr.category}
+                             </span>
+                             {sourceLabel}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                             <span>{tr.date}</span>
+                             {tr.description && <span className="truncate border-l border-slate-300 pl-2 ml-1 max-w-[150px]">{tr.description}</span>}
+                        </div>
+                    </div>
+                </div>
+                <span className={`font-mono font-bold whitespace-nowrap ${tr.includeInWorkerShare !== false ? (tr.type === 'INCOME' ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-400'}`}>
+                    {formatCurrency(tr.amount)}
+                </span>
+            </div>
+        );
+    };
+
     return (
         <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
-            <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                    <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                        <Calculator className="w-6 h-6 text-amber-600"/> {t.calculationDetails}
-                    </h3>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-500"><X size={20}/></button>
+            <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
+                {/* Header */}
+                <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 flex-shrink-0">
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                            <Calculator className="w-6 h-6 text-amber-600"/> {t.calculationDetails}
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-1">Real-time calculation based on selected transactions</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={generateSharePDF} className="p-2 bg-white border border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 rounded-xl text-slate-600 transition-colors flex items-center gap-2 font-medium text-xs shadow-sm">
+                             <Download size={16}/> PDF
+                        </button>
+                        <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-500"><X size={20}/></button>
+                    </div>
                 </div>
-                <div className="p-6 space-y-8">
-                    {/* Income Section */}
-                    <div>
-                        <h4 className="font-bold text-emerald-700 mb-3 border-b border-emerald-100 pb-2 flex justify-between">
-                            <span>Eligible Income (Included in Share)</span>
-                            <span>{formatCurrency(workerIncomeBase)}</span>
-                        </h4>
-                        <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-                             {transactions.filter((t: any) => t.type === 'INCOME' && t.includeInWorkerShare !== false).map((tr: any) => (
-                                 <div key={tr.id} className="flex justify-between text-sm text-slate-600 border-b border-slate-50 py-1">
-                                     <span>{tr.category} ({tr.date})</span>
-                                     <span className="font-mono">{formatCurrency(tr.amount)}</span>
-                                 </div>
-                             ))}
-                             {transactions.filter((t: any) => t.type === 'INCOME' && t.includeInWorkerShare !== false).length === 0 && <p className="text-xs text-slate-400 italic">No eligible income records</p>}
-                        </div>
-                        <div className="mt-2 text-right">
-                             <span className="text-sm font-bold text-emerald-600">20% Share = {formatCurrency(workerGrossShare)}</span>
-                        </div>
-                    </div>
 
-                    {/* Expense Section */}
-                    <div>
-                        <h4 className="font-bold text-rose-700 mb-3 border-b border-rose-100 pb-2 flex justify-between">
-                            <span>Eligible Expense (Included in Share)</span>
-                            <span>{formatCurrency(workerExpenseBase)}</span>
-                        </h4>
-                         <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-                             {transactions.filter((t: any) => t.type === 'EXPENSE' && t.includeInWorkerShare !== false).map((tr: any) => (
-                                 <div key={tr.id} className="flex justify-between text-sm text-slate-600 border-b border-slate-50 py-1">
-                                     <span>{tr.category} ({tr.date})</span>
-                                     <span className="font-mono">{formatCurrency(tr.amount)}</span>
-                                 </div>
-                             ))}
-                             {transactions.filter((t: any) => t.type === 'EXPENSE' && t.includeInWorkerShare !== false).length === 0 && <p className="text-xs text-slate-400 italic">No eligible expense records</p>}
-                        </div>
-                        <div className="mt-2 text-right">
-                             <span className="text-sm font-bold text-rose-600">20% Liability = {formatCurrency(workerExpenseShare)}</span>
-                        </div>
-                    </div>
-
-                    {/* Summary */}
-                    <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
-                         <div className="flex justify-between items-center text-lg font-bold text-slate-900">
-                             <span>Net Share Entitlement</span>
-                             <span>{formatCurrency(workerNetShare)}</span>
+                {/* Scrollable Content */}
+                <div className="p-6 space-y-6 overflow-y-auto flex-1">
+                    {/* Summary Card */}
+                    <div className="bg-amber-50 p-5 rounded-2xl border border-amber-100 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-4 text-center md:text-left">
+                         <div>
+                             <p className="text-xs font-bold text-amber-800 uppercase tracking-wider mb-1">Eligible Income</p>
+                             <p className="text-xl font-bold text-emerald-700">{formatCurrency(workerIncomeBase)}</p>
                          </div>
-                         <p className="text-xs text-slate-500 mt-1 text-right">(20% Income - 20% Expense)</p>
+                         <div className="md:border-l md:border-amber-200 md:pl-4">
+                             <p className="text-xs font-bold text-amber-800 uppercase tracking-wider mb-1">Eligible Expense</p>
+                             <p className="text-xl font-bold text-rose-700">{formatCurrency(workerExpenseBase)}</p>
+                         </div>
+                         <div className="md:border-l md:border-amber-200 md:pl-4">
+                             <p className="text-xs font-bold text-amber-800 uppercase tracking-wider mb-1">Net Share (20%)</p>
+                             <p className="text-xl font-black text-slate-800">{formatCurrency(workerNetShare)}</p>
+                         </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {/* Income Section */}
+                        <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 h-full flex flex-col">
+                            <h4 className="font-bold text-emerald-700 mb-3 pb-2 border-b border-emerald-100 flex justify-between items-center sticky top-0 bg-slate-50 z-10">
+                                <span>Income Sources</span>
+                                <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded-lg">20% Share</span>
+                            </h4>
+                            <div className="space-y-1 overflow-y-auto flex-1 max-h-[300px] pr-1">
+                                {transactions.filter((t: any) => t.type === 'INCOME').sort((a:any, b:any) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((tr: any) => (
+                                    <TransactionRow key={tr.id} tr={tr} />
+                                ))}
+                                {transactions.filter((t: any) => t.type === 'INCOME').length === 0 && <p className="text-xs text-slate-400 italic text-center py-4">No income records</p>}
+                            </div>
+                        </div>
+
+                        {/* Expense Section */}
+                        <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 h-full flex flex-col">
+                            <h4 className="font-bold text-rose-700 mb-3 pb-2 border-b border-rose-100 flex justify-between items-center sticky top-0 bg-slate-50 z-10">
+                                <span>Deductible Expenses</span>
+                                <span className="text-xs bg-rose-100 text-rose-800 px-2 py-1 rounded-lg">20% Liability</span>
+                            </h4>
+                             <div className="space-y-1 overflow-y-auto flex-1 max-h-[300px] pr-1">
+                                {transactions.filter((t: any) => t.type === 'EXPENSE').sort((a:any, b:any) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((tr: any) => (
+                                    <TransactionRow key={tr.id} tr={tr} />
+                                ))}
+                                {transactions.filter((t: any) => t.type === 'EXPENSE').length === 0 && <p className="text-xs text-slate-400 italic text-center py-4">No expense records</p>}
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div className="p-6 border-t border-slate-100 bg-slate-50 text-right">
-                    <button onClick={onClose} className="px-6 py-2 bg-slate-800 text-white rounded-xl font-medium">Close</button>
+
+                {/* Footer */}
+                <div className="p-5 border-t border-slate-100 bg-slate-50 text-right flex-shrink-0">
+                    <button onClick={onClose} className="px-6 py-2 bg-slate-800 text-white rounded-xl font-medium shadow-lg shadow-slate-200">Close</button>
                 </div>
             </div>
         </div>
     );
 };
 
-const SeasonCard = ({ season, transactions, workers, onCloseSeason, onDeleteSeason, lang }: any) => {
+const SeasonCard = ({ season, transactions, workers, partners, onCloseSeason, onDeleteSeason, onUpdateTransaction, lang }: any) => {
   const [showShareDetails, setShowShareDetails] = useState(false);
   const t = TRANSLATIONS[lang as Language];
 
@@ -671,6 +831,9 @@ const SeasonCard = ({ season, transactions, workers, onCloseSeason, onDeleteSeas
         isOpen={showShareDetails}
         onClose={() => setShowShareDetails(false)}
         transactions={transactions}
+        partners={partners}
+        season={season}
+        onUpdateTransaction={onUpdateTransaction}
         workerIncomeBase={workerIncomeBase}
         workerExpenseBase={workerExpenseBase}
         workerGrossShare={workerGrossShare}
@@ -819,8 +982,8 @@ const TransactionManager = ({ transactions, seasons, partners, workers, categori
         seasons={seasons} 
         partners={partners} 
         workers={workers}
-        onEdit={(id: string) => {
-          setEditingId(id);
+        onEdit={(tr: Transaction) => {
+          setEditingId(tr.id);
           setIsFormOpen(true);
           window.scrollTo(0, 0);
         }}
@@ -1072,298 +1235,79 @@ const TransactionForm = ({ initialData, onSave, onCancel, seasons, workers, part
   );
 };
 
-const TransactionList = ({ transactions, seasons, partners, workers, onDelete, onEdit, readonly, lang }: any) => {
-  const t = TRANSLATIONS[lang as Language];
-  
-  // -- Filter State --
-  const [showFilters, setShowFilters] = useState(false);
-  const [filterType, setFilterType] = useState<string>('ALL');
-  const [search, setSearch] = useState('');
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
-  const [entityFilter, setEntityFilter] = useState(''); // ID of partner or worker
-  const [sortOrder, setSortOrder] = useState<'DATE_DESC' | 'DATE_ASC' | 'AMT_HIGH' | 'AMT_LOW'>('DATE_DESC');
-
-  // -- Filtering Logic --
-  const filtered = useMemo(() => {
-    return transactions.filter((t: Transaction) => {
-      // Type Filter
-      if (filterType !== 'ALL' && t.type !== filterType) return false;
-      
-      // Search
-      if (search && !t.category.toLowerCase().includes(search.toLowerCase()) && !t.description?.toLowerCase().includes(search.toLowerCase())) return false;
-      
-      // Date Range
-      if (dateRange.start && t.date < dateRange.start) return false;
-      if (dateRange.end && t.date > dateRange.end) return false;
-
-      // Entity Filter
-      if (entityFilter) {
-          const involvesEntity = t.workerId === entityFilter || t.partnerId === entityFilter || t.payerPartnerId === entityFilter;
-          if (!involvesEntity) return false;
-      }
-
-      return true;
-    }).sort((a: Transaction, b: Transaction) => {
-        if (sortOrder === 'DATE_DESC') return new Date(b.date).getTime() - new Date(a.date).getTime();
-        if (sortOrder === 'DATE_ASC') return new Date(a.date).getTime() - new Date(b.date).getTime();
-        if (sortOrder === 'AMT_HIGH') return b.amount - a.amount;
-        if (sortOrder === 'AMT_LOW') return a.amount - b.amount;
-        return 0;
-    });
-  }, [transactions, filterType, search, dateRange, entityFilter, sortOrder]);
-
-  // -- Summary Stats for Filtered Data --
-  const summary = useMemo(() => {
-     let inc = 0;
-     let exp = 0;
-     filtered.forEach((t: Transaction) => {
-         if(t.type === 'INCOME' || t.type === 'PARTNER_CONTRIBUTION') inc += t.amount;
-         else exp += t.amount;
-     });
-     return { inc, exp, net: inc - exp };
-  }, [filtered]);
-
-  const getTypeStyle = (type: TransactionType) => {
-    switch(type) {
-      case 'INCOME': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
-      case 'EXPENSE': return 'bg-rose-100 text-rose-800 border-rose-200';
-      case 'WORKER_ADVANCE': return 'bg-amber-100 text-amber-800 border-amber-200';
-      default: return 'bg-blue-100 text-blue-800 border-blue-200';
-    }
-  };
-
-  const getSourceLabel = (t: Transaction) => {
-    if (t.paymentSource === 'FARM_CASH') return 'Farm Cash';
-    if (t.paymentSource === 'FARM_BANK') return 'Farm Bank';
-    if (t.paymentSource === 'PARTNER') {
-        const p = partners.find((x: Partner) => x.id === t.payerPartnerId);
-        return `By ${p?.name || 'Partner'}`;
-    }
-    return 'Unknown';
-  };
-
-  const resetFilters = () => {
-      setFilterType('ALL');
-      setSearch('');
-      setDateRange({ start: '', end: '' });
-      setEntityFilter('');
-      setSortOrder('DATE_DESC');
-  };
-
-  return (
-    <div>
-      {!readonly && (
-        <div className="mb-6 space-y-4">
-             {/* Search and Toggle Row */}
-             <div className="flex gap-2">
-                 <div className="relative flex-1">
-                    <Search className="absolute left-3 top-3.5 text-slate-400 w-4 h-4" />
-                    <input 
-                        type="text" 
-                        placeholder={t.searchPlaceholder}
-                        className="w-full pl-9 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-medium"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                    />
-                 </div>
-                 <button 
-                    onClick={() => setShowFilters(!showFilters)}
-                    className={`px-4 rounded-xl border flex items-center gap-2 font-medium transition-colors ${showFilters ? 'bg-slate-800 text-white border-slate-800' : 'bg-white border-slate-200 text-slate-600'}`}
-                 >
-                     <Filter size={18} /> <span className="hidden md:inline">{t.filters}</span>
-                 </button>
-                 <button 
-                    onClick={() => {
-                        const cycles: any[] = ['DATE_DESC', 'DATE_ASC', 'AMT_HIGH', 'AMT_LOW'];
-                        const next = cycles[(cycles.indexOf(sortOrder) + 1) % 4];
-                        setSortOrder(next);
-                    }}
-                    className="px-4 rounded-xl border border-slate-200 bg-white text-slate-600 flex items-center gap-2 font-medium hover:bg-slate-50"
-                 >
-                     <ArrowUpDown size={18} />
-                 </button>
-             </div>
-
-             {/* Expanded Filters Panel */}
-             {showFilters && (
-                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-4 animate-in slide-in-from-top-2">
-                      <div>
-                          <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">{t.startDate}</label>
-                          <input type="date" className="w-full p-2 rounded-lg border border-slate-200 text-sm" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
-                      </div>
-                      <div>
-                          <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">{t.endDate}</label>
-                          <input type="date" className="w-full p-2 rounded-lg border border-slate-200 text-sm" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
-                      </div>
-                      <div>
-                          <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">{t.filterByEntity}</label>
-                          <select className="w-full p-2 rounded-lg border border-slate-200 text-sm" value={entityFilter} onChange={e => setEntityFilter(e.target.value)}>
-                              <option value="">All People</option>
-                              <optgroup label="Workers">
-                                  {workers.map((w: Worker) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                              </optgroup>
-                              <optgroup label="Partners">
-                                  {partners.map((p: Partner) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                              </optgroup>
-                          </select>
-                      </div>
-                      <div className="flex items-end">
-                          <button onClick={resetFilters} className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg text-sm flex items-center justify-center gap-2">
-                             <XCircle size={16} /> {t.reset}
-                          </button>
-                      </div>
-                 </div>
-             )}
-             
-             {/* Type Tabs */}
-             <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                {['ALL', 'INCOME', 'EXPENSE', 'WORKER_ADVANCE'].map(type => (
-                    <button 
-                    key={type}
-                    onClick={() => setFilterType(type)} 
-                    className={`px-5 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${filterType === type ? 'bg-slate-800 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                    >
-                    {type === 'ALL' ? 'All Transactions' : type.replace('_', ' ')}
-                    </button>
-                ))}
-             </div>
-
-             {/* Live Summary Card */}
-             {(filterType !== 'ALL' || search || dateRange.start || entityFilter) && (
-                 <div className="bg-gradient-to-r from-emerald-50 to-blue-50 p-4 rounded-xl border border-emerald-100 flex justify-between items-center shadow-sm">
-                     <span className="font-bold text-slate-700 text-sm">{t.filteredTotal}:</span>
-                     <div className="flex gap-4 text-sm">
-                         <span className="text-emerald-700 font-bold">+{formatCurrency(summary.inc)}</span>
-                         <span className="text-rose-700 font-bold">-{formatCurrency(summary.exp)}</span>
-                         <span className={`font-black ${summary.net >= 0 ? 'text-slate-800' : 'text-red-600'}`}>= {formatCurrency(summary.net)}</span>
-                     </div>
-                 </div>
-             )}
-        </div>
-      )}
-
-      {/* Mobile Card View */}
-      <div className="md:hidden space-y-4">
-        {filtered.map((t: Transaction) => {
-          const season = seasons.find((s: Season) => s.id === t.seasonId);
-          const worker = t.workerId ? workers.find((w: Worker) => w.id === t.workerId) : null;
-          
-          return (
-            <div key={t.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
-               <div className="flex justify-between items-start mb-3">
-                 <div className="flex flex-col">
-                   <span className="text-slate-400 text-xs font-semibold uppercase tracking-wide">{t.date}</span>
-                   <span className="font-bold text-slate-900 text-lg leading-tight">{t.category}</span>
-                 </div>
-                 <div className="flex flex-col items-end gap-1">
-                    <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold border ${getTypeStyle(t.type)}`}>
-                        {t.type === 'WORKER_ADVANCE' ? 'ADVANCE' : t.type}
-                    </span>
-                    {t.includeInWorkerShare === false && (
-                       <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded border border-gray-200">Excluded 20%</span>
-                    )}
-                 </div>
-               </div>
-               
-               {t.description && <p className="text-sm text-slate-500 mb-2">{t.description}</p>}
-               
-               <div className="flex flex-wrap gap-2 mb-4 mt-2">
-                  <span className="text-[10px] bg-slate-50 text-slate-600 px-2.5 py-1.5 rounded-lg border border-slate-100 flex items-center gap-1.5 font-medium">
-                    <CreditCard className="w-3 h-3" /> {getSourceLabel(t)}
-                  </span>
-                  {worker && <span className="text-[10px] bg-amber-50 text-amber-700 px-2.5 py-1.5 rounded-lg border border-amber-100 flex items-center gap-1.5 font-medium"><UserCheck className="w-3 h-3" /> {worker.name}</span>}
-                  {season && <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2.5 py-1.5 rounded-lg border border-emerald-100 flex items-center gap-1.5 font-medium"><Calendar className="w-3 h-3" /> {season.name}</span>}
-               </div>
-
-               <div className="flex justify-between items-end pt-4 border-t border-slate-50">
-                 <span className={`text-2xl font-bold ${['INCOME', 'PARTNER_CONTRIBUTION'].includes(t.type) ? 'text-emerald-600' : 'text-slate-800'}`}>
-                    {['INCOME', 'PARTNER_CONTRIBUTION'].includes(t.type) ? '+' : '-'} {formatCurrency(t.amount)}
-                 </span>
-                 {!readonly && (
-                   <div className="flex gap-2">
-                      <button onClick={() => onEdit(t.id)} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100 transition-colors"><Edit className="w-4 h-4" /></button>
-                      <button onClick={() => onDelete(t.id)} className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100 transition-colors"><Trash2 className="w-4 h-4" /></button>
-                   </div>
-                 )}
-               </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Desktop Table View */}
-      <div className="hidden md:block bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-slate-50/50 border-b border-slate-100">
-              <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider">{t.date}</th>
-              <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider">Type</th>
-              <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider">Details</th>
-              <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider">Source</th>
-              <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">{t.amount}</th>
-              {!readonly && <th className="p-5 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50">
-            {filtered.map((t: Transaction) => {
-              const season = seasons.find((s: Season) => s.id === t.seasonId);
-              const worker = t.workerId ? workers.find((w: Worker) => w.id === t.workerId) : null;
-              const partner = t.partnerId ? partners.find((p: Partner) => p.id === t.partnerId) : null;
-
-              return (
-                <tr key={t.id} className="hover:bg-slate-50/80 transition-colors group">
-                  <td className="p-5 text-sm font-medium text-slate-600 whitespace-nowrap">{t.date}</td>
-                  <td className="p-5">
-                    <div className="flex flex-col items-start gap-1">
-                      <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold border ${getTypeStyle(t.type)}`}>
-                        {t.type === 'WORKER_ADVANCE' ? 'ADVANCE' : t.type.replace(/_/g, ' ')}
-                      </span>
-                      {t.includeInWorkerShare === false && <span className="text-[9px] text-slate-400">Excluded 20%</span>}
-                    </div>
-                  </td>
-                  <td className="p-5">
-                    <p className="font-bold text-slate-800">{t.category}</p>
-                    <p className="text-xs text-slate-500">{t.description}</p>
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {season && <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-100 font-medium">{season.name}</span>}
-                      {worker && <span className="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-100 font-medium">Worker: {worker.name}</span>}
-                      {partner && <span className="text-[10px] bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-100 font-medium">Partner: {partner.name}</span>}
-                    </div>
-                  </td>
-                  <td className="p-5 text-sm text-slate-500 font-medium">
-                    {getSourceLabel(t)}
-                  </td>
-                  <td className={`p-5 text-right font-bold text-base ${['INCOME', 'PARTNER_CONTRIBUTION'].includes(t.type) ? 'text-emerald-600' : 'text-slate-800'}`}>
-                    {['INCOME', 'PARTNER_CONTRIBUTION'].includes(t.type) ? '+' : '-'} {formatCurrency(t.amount)}
-                  </td>
-                  {!readonly && (
-                    <td className="p-5 text-right">
-                       <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <button onClick={() => onEdit(t.id)} className="text-blue-600 hover:text-blue-800 p-2 hover:bg-blue-50 rounded-lg transition-colors"><Edit className="w-4 h-4" /></button>
-                         <button onClick={(e) => { e.stopPropagation(); onDelete(t.id); }} className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
-                       </div>
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-            {filtered.length === 0 && (
-              <tr><td colSpan={6} className="p-12 text-center text-slate-400">No transactions found</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
 const PartnersView = ({ partners, transactions, financials, lang }: any) => {
   const t = TRANSLATIONS[lang as Language];
+
+  const generatePartnerPDF = (partner: Partner, partnerTrans: Transaction[], summary: any) => {
+      const doc = new jsPDF();
+      doc.setFontSize(18);
+      doc.setTextColor(6, 78, 59);
+      doc.text(`Partner Statement: ${partner.name}`, 14, 20);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(0,0,0);
+      doc.text(`Date: ${new Date().toLocaleDateString()}`, 14, 28);
+
+      // Summary Box
+      doc.setDrawColor(200);
+      doc.setFillColor(248, 250, 252);
+      doc.rect(14, 35, 180, 50, 'FD');
+      
+      doc.text(`Capital Injected (Direct): ${formatCurrency(summary.directContribution)}`, 20, 45);
+      doc.text(`Expenses Paid (Pocket): ${formatCurrency(summary.expensesPaid)}`, 20, 52);
+      doc.text(`Advances Given (Pocket): ${formatCurrency(summary.advancesPaid)}`, 20, 59);
+      doc.setFont(undefined, 'bold');
+      doc.text(`Total Invested: ${formatCurrency(summary.totalInvested)}`, 20, 68);
+      
+      doc.setFont(undefined, 'normal');
+      doc.text(`Cash Withdrawn: -${formatCurrency(summary.withdrawal)}`, 110, 45);
+      doc.text(`Income Kept (Pocket): -${formatCurrency(summary.incomeReceived)}`, 110, 52);
+      doc.setFont(undefined, 'bold');
+      doc.text(`Net Balance (Invested): ${formatCurrency(summary.netBalance)}`, 110, 68);
+
+      // Transactions
+      const rows = partnerTrans.map(tr => {
+          let typeLabel = tr.type.replace('_', ' ');
+          let amountPrefix = ['INCOME', 'PARTNER_CONTRIBUTION'].includes(tr.type) ? '+' : '-';
+          // Logic specific to partner view interpretation
+          if(tr.paymentSource === 'PARTNER' && tr.payerPartnerId === partner.id) {
+              if(tr.type === 'INCOME') amountPrefix = '-'; // Keeping income reduces farm debt to partner
+              else amountPrefix = '+'; // Paying expense increases farm debt to partner
+          }
+          if(tr.type === 'PARTNER_WITHDRAWAL') amountPrefix = '-';
+          if(tr.type === 'PARTNER_CONTRIBUTION') amountPrefix = '+';
+
+          return [
+              tr.date,
+              tr.category,
+              typeLabel,
+              `${amountPrefix} ${tr.amount.toLocaleString('en-IN')}`,
+              tr.description || '-'
+          ];
+      });
+
+      autoTable(doc, {
+          startY: 95,
+          head: [['Date', 'Category', 'Type', 'Amount', 'Description']],
+          body: rows,
+          headStyles: { fillColor: [6, 78, 59] },
+          alternateRowStyles: { fillColor: [240, 253, 244] },
+      });
+
+      doc.save(`PartnerReport_${partner.name}.pdf`);
+  };
+
   return (
   <div className="space-y-6 pb-20 md:pb-0 animate-in fade-in">
      <h2 className="text-2xl font-bold text-slate-800">{t.partners}</h2>
-     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+     <div className="grid grid-cols-1 gap-6">
        {partners.map((partner: Partner) => {
+         // --- Calculations ---
+         const partnerTrans = transactions.filter((t: Transaction) => 
+            (t.partnerId === partner.id) || 
+            (t.paymentSource === 'PARTNER' && t.payerPartnerId === partner.id)
+         ).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
          const directContribution = transactions
            .filter((t: Transaction) => t.partnerId === partner.id && t.type === 'PARTNER_CONTRIBUTION')
            .reduce((sum: number, t: Transaction) => sum + Number(t.amount), 0);
@@ -1388,62 +1332,86 @@ const PartnersView = ({ partners, transactions, financials, lang }: any) => {
           
          const netBalance = totalInvested - withdrawal - incomeReceived;
 
+         const summary = { directContribution, expensesPaid, advancesPaid, incomeReceived, totalInvested, withdrawal, netBalance };
+
          return (
-           <div key={partner.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-             <div className="flex items-center gap-4 mb-6">
-                <div className="bg-blue-50 p-4 rounded-full text-blue-600">
-                  <Briefcase className="w-6 h-6" />
+           <div key={partner.id} className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-all">
+             <div className="bg-slate-50/50 p-6 border-b border-slate-100 flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xl border-4 border-white shadow-sm">
+                        {partner.name.charAt(0)}
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800">{partner.name}</h3>
+                        <p className="text-xs text-slate-500 font-medium">Partner</p>
+                    </div>
                 </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-slate-800">{partner.name}</h3>
-                  <p className="text-xs text-slate-500">Partner</p>
+                <button 
+                    onClick={() => generatePartnerPDF(partner, partnerTrans, summary)}
+                    className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 hover:text-emerald-600 transition-colors shadow-sm"
+                >
+                    <Download size={16} /> Download Report
+                </button>
+             </div>
+             
+             <div className="p-6 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Left Col: Investments */}
+                <div className="space-y-4">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><ArrowRight size={14} className="text-emerald-500"/> Inflows (Investment)</h4>
+                    <div className="bg-emerald-50/50 rounded-2xl p-4 space-y-3 border border-emerald-100/50">
+                        <div className="flex justify-between text-sm">
+                            <span className="text-slate-600">Direct Cash Injection</span>
+                            <span className="font-bold text-slate-800">{formatCurrency(directContribution)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-slate-600">Expenses Paid (Pocket)</span>
+                            <span className="font-bold text-slate-800">{formatCurrency(expensesPaid)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-slate-600">Advances Paid (Pocket)</span>
+                            <span className="font-bold text-slate-800">{formatCurrency(advancesPaid)}</span>
+                        </div>
+                        <div className="pt-3 border-t border-emerald-100 flex justify-between items-center">
+                            <span className="font-bold text-emerald-800 text-sm">Total Invested</span>
+                            <span className="font-bold text-emerald-700 text-lg">{formatCurrency(totalInvested)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right Col: Withdrawals/Balance */}
+                <div className="space-y-4">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><ArrowRight size={14} className="text-rose-500"/> Outflows & Balance</h4>
+                    <div className="bg-rose-50/50 rounded-2xl p-4 space-y-3 border border-rose-100/50">
+                        <div className="flex justify-between text-sm">
+                            <span className="text-slate-600">Cash Withdrawn</span>
+                            <span className="font-bold text-rose-600">-{formatCurrency(withdrawal)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-slate-600">Income Kept (Pocket)</span>
+                            <span className="font-bold text-rose-600">-{formatCurrency(incomeReceived)}</span>
+                        </div>
+                         <div className="pt-3 border-t border-rose-100 flex justify-between items-center">
+                            <span className="font-bold text-slate-700 text-sm">Net Balance (Invested)</span>
+                            <span className={`font-black text-xl ${netBalance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(netBalance)}</span>
+                        </div>
+                    </div>
                 </div>
              </div>
              
-             <div className="space-y-3">
-               <div className="flex justify-between items-center text-sm">
-                 <span className="text-slate-500">Direct Cash Injection</span>
-                 <span className="font-medium text-emerald-600">{formatCurrency(directContribution)}</span>
-               </div>
-               <div className="flex justify-between items-center text-sm">
-                 <span className="text-slate-500">Expenses Paid Personally</span>
-                 <span className="font-medium text-emerald-600">{formatCurrency(expensesPaid)}</span>
-               </div>
-               <div className="flex justify-between items-center text-sm">
-                 <span className="text-slate-500">Advances Paid Personally</span>
-                 <span className="font-medium text-emerald-600">{formatCurrency(advancesPaid)}</span>
-               </div>
-
-               {incomeReceived > 0 && (
-                 <div className="flex justify-between items-center text-sm text-red-600 bg-red-50 p-2 rounded-lg">
-                   <span>Income Collected (Pocket)</span>
-                   <span className="font-medium">-{formatCurrency(incomeReceived)}</span>
-                 </div>
-               )}
-               
-               <div className="flex justify-between items-center text-sm pt-4 border-t border-slate-100">
-                 <span className="text-slate-500">Total Withdrawn</span>
-                 <span className="font-bold text-red-600">-{formatCurrency(withdrawal)}</span>
-               </div>
-               
-               <div className="flex justify-between items-center pt-2 mt-2">
-                 <span className="font-bold text-slate-800 text-lg">Net Invested</span>
-                 <span className={`font-bold text-xl ${netBalance >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                   {formatCurrency(netBalance)}
-                 </span>
-               </div>
-
-               <div className="mt-6 p-4 bg-amber-50 rounded-xl border border-amber-100">
-                  <div className="flex items-center gap-2 mb-2 text-amber-800 font-bold text-xs uppercase tracking-wider">
-                    <Coins className="w-4 h-4" /> Estimated Season Share
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-slate-600">Farm Net Profit (50% Share)</span>
-                    <span className={`font-bold text-lg ${financials.sharePerPartner >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                      {formatCurrency(financials.sharePerPartner)}
+             {/* Bottom: Est Share */}
+             <div className="px-6 pb-6 md:px-8 md:pb-8">
+                <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <div className="p-2 bg-white rounded-full shadow-sm text-amber-500">
+                        <Coins size={20} />
+                    </div>
+                    <div className="flex-1">
+                        <p className="text-xs font-bold text-slate-400 uppercase">Estimated Season Share</p>
+                        <p className="text-sm font-medium text-slate-600">50% of Net Farm Profit</p>
+                    </div>
+                    <span className={`font-bold text-xl ${financials.sharePerPartner >= 0 ? 'text-emerald-600' : 'text-slate-600'}`}>
+                        {formatCurrency(financials.sharePerPartner)}
                     </span>
-                  </div>
-               </div>
+                </div>
              </div>
            </div>
          );
@@ -1888,9 +1856,11 @@ const App = () => {
           seasons={seasons} 
           transactions={transactions} 
           workers={workers} 
+          partners={partners} // Added prop
           onAddSeason={handleAddSeason}
           onCloseSeason={handleCloseSeason}
           onDeleteSeason={handleDeleteSeason}
+          onUpdateTransaction={handleUpdateTransaction} // Added prop
           lang={lang}
         />
       );
