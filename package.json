@@ -1,5 +1,5 @@
 {
-  "name": "generated-farming",
+  "name": "copy-of-copy-of-agribooks-yash-2",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,10 +10,10 @@
   },
   "dependencies": {
     "react": "^19.2.3",
-    "lucide-react": "^0.562.0",
     "react-dom": "^19.2.3",
-    "jspdf": "2.5.1",
-    "jspdf-autotable": "3.8.2"
+    "jspdf": "^3.0.4",
+    "jspdf-autotable": "^5.0.2",
+    "lucide-react": "^0.562.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
