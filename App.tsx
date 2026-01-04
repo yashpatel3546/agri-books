@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { jsPDF } from "jspdf";
-import autoTable from 'jspdf-autotable';
 import { 
   Sprout, 
   Users, 
@@ -35,7 +33,6 @@ import {
   ArrowUpDown,
   GitMerge,
   ArrowRight,
-  XCircle,
   Search,
   Coins,
   Eye,
@@ -149,7 +146,7 @@ const TRANSLATIONS = {
     saveRecord: "Save Record",
     cancel: "Cancel",
     backupRestore: "Backup & Sync",
-    downloadReport: "Download Report (PDF)",
+    downloadReport: "Print Report",
     shareWhatsapp: "Share Backup",
     calculationDetails: "Calculation Details",
     printReport: "Print Report",
@@ -198,7 +195,7 @@ const TRANSLATIONS = {
     saveRecord: "સેવ કરો",
     cancel: "રદ કરો",
     backupRestore: "બેકઅપ & સિંક",
-    downloadReport: "રિપોર્ટ ડાઉનલોડ (PDF)",
+    downloadReport: "રિપોર્ટ પ્રિન્ટ કરો",
     shareWhatsapp: "વોટ્સએપ પર મોકલો",
     calculationDetails: "હિસાબની વિગત",
     printReport: "પ્રિન્ટ રિપોર્ટ",
@@ -224,137 +221,255 @@ const TRANSLATIONS = {
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// 1. UI Formatter (With Symbol)
 const formatCurrency = (amount: any) => {
     const num = Number(amount);
     return isNaN(num) ? '₹0' : `₹${num.toLocaleString('en-IN')}`;
 };
 
-// 2. PDF Formatter (Safe Text)
-const formatCurrencyPDF = (amount: any) => {
-    const num = Number(amount);
-    if (isNaN(num)) return "Rs. 0";
-    return `Rs. ${num.toLocaleString('en-IN')}`;
-};
+// --- Print Component ---
 
-// Standardized PDF Header
-const drawPDFHeader = (doc: any, title: string, subtitle: string) => {
-    // Background
-    doc.setFillColor(6, 78, 59); // Emerald 900
-    doc.rect(0, 0, 210, 35, 'F');
-    
-    // Logo / Brand
-    doc.setFontSize(22);
-    doc.setTextColor(255, 255, 255);
-    doc.setFont(undefined, 'bold');
-    doc.text("AgriBooks", 14, 20);
-    
-    // Title
-    doc.setFontSize(14);
-    doc.setFont(undefined, 'normal');
-    doc.text(title, 14, 29);
+interface PrintProps {
+  data: any; // Type depends on report type
+  onExit: () => void;
+}
 
-    // Subtitle
-    doc.setFontSize(10);
-    doc.setTextColor(209, 250, 229); // Light Emerald
-    doc.text(subtitle, 196, 20, { align: 'right' });
-    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 196, 29, { align: 'right' });
+const PrintTemplate = ({ data, onExit }: PrintProps) => {
+  // Removed auto-print useEffect to prevent sandbox "Ignored call to print()" error.
+  
+  const handlePrint = () => {
+    try {
+        window.print();
+    } catch (e) {
+        alert("Print action blocked. Please use Ctrl + P on your keyboard.");
+    }
+  };
 
-    // Reset Text Color
-    doc.setTextColor(0, 0, 0);
-};
+  const renderHeader = (title: string, subtitle: string) => (
+    <div className="mb-6 border-b-2 border-slate-800 pb-4">
+       <div className="flex justify-between items-end">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">AgriBooks</h1>
+            <h2 className="text-xl font-semibold text-slate-700 mt-1">{title}</h2>
+          </div>
+          <div className="text-right">
+             <p className="text-sm text-slate-500">{subtitle}</p>
+             <p className="text-xs text-slate-400">Generated: {new Date().toLocaleDateString()}</p>
+          </div>
+       </div>
+    </div>
+  );
 
-// Season PDF
-const generateSeasonPDF = (season: Season, transactions: Transaction[], lang: Language) => {
-    const doc = new jsPDF();
-    drawPDFHeader(doc, "Season Financial Report", `Season: ${season.name}`);
+  const renderTable = (headers: string[], rows: (string|number)[][], footers?: (string|number)[]) => (
+    <div className="mt-6">
+       <table className="w-full text-sm border-collapse border border-slate-300">
+         <thead>
+           <tr className="bg-slate-100 print:bg-slate-100">
+             {headers.map((h, i) => (
+               <th key={i} className={`border border-slate-300 px-3 py-2 text-left text-slate-800 ${i === headers.length - 1 ? 'text-right' : ''}`}>{h}</th>
+             ))}
+           </tr>
+         </thead>
+         <tbody>
+           {rows.map((row, idx) => (
+             <tr key={idx} className="border-b border-slate-200">
+                {row.map((cell, i) => (
+                  <td key={i} className={`border border-slate-300 px-3 py-2 text-slate-700 ${i === headers.length - 1 ? 'text-right font-mono font-medium' : ''}`}>
+                    {cell}
+                  </td>
+                ))}
+             </tr>
+           ))}
+         </tbody>
+         {footers && (
+            <tfoot>
+               <tr className="bg-slate-100 font-bold border-t-2 border-slate-400">
+                 {footers.map((f, i) => (
+                    <td key={i} className={`px-3 py-2 text-slate-900 ${i === footers.length - 1 ? 'text-right' : ''}`}>{f}</td>
+                 ))}
+               </tr>
+            </tfoot>
+         )}
+       </table>
+    </div>
+  );
 
-    const incomeTransactions = transactions.filter(tr => tr.type === 'INCOME');
-    const expenseTransactions = transactions.filter(tr => tr.type === 'EXPENSE');
-    
-    const totalIncome = incomeTransactions.reduce((sum, tr) => sum + Number(tr.amount), 0);
-    const totalExpense = expenseTransactions.reduce((sum, tr) => sum + Number(tr.amount), 0);
-    const netProfit = totalIncome - totalExpense;
+  const renderContent = () => {
+    if (data.type === 'SEASON_REPORT') {
+       const { season, summary, transactions } = data;
+       return (
+         <>
+           {renderHeader("Season Financial Report", `Season: ${season.name}`)}
+           
+           <div className="grid grid-cols-2 gap-6 mb-8 border border-slate-300 rounded p-4">
+              <div>
+                 <h3 className="font-bold border-b border-slate-200 pb-2 mb-2">Farm Performance</h3>
+                 <div className="flex justify-between py-1 border-b border-dashed border-slate-200"><span>Total Revenue:</span> <strong>{formatCurrency(summary.totalIncome)}</strong></div>
+                 <div className="flex justify-between py-1 border-b border-dashed border-slate-200"><span>Total Expenses:</span> <strong>{formatCurrency(summary.totalExpense)}</strong></div>
+                 <div className="flex justify-between py-1 pt-2 text-lg"><span>Net Profit:</span> <strong className={summary.netProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}>{formatCurrency(summary.netProfit)}</strong></div>
+              </div>
+              <div>
+                 <h3 className="font-bold border-b border-slate-200 pb-2 mb-2">Worker Share (20%)</h3>
+                 <div className="flex justify-between py-1 border-b border-dashed border-slate-200"><span>Share Entitlement:</span> <strong>{formatCurrency(summary.workerShare)}</strong></div>
+                 <div className="flex justify-between py-1 border-b border-dashed border-slate-200"><span>Less Advances:</span> <strong>-{formatCurrency(summary.advances)}</strong></div>
+                 <div className="flex justify-between py-1 pt-2 text-lg"><span>Final Payable:</span> <strong>{formatCurrency(summary.payable)}</strong></div>
+              </div>
+           </div>
 
-    // Worker Calculation
-    const workerIncBase = incomeTransactions.filter(tr => tr.includeInWorkerShare !== false).reduce((sum, tr) => sum + Number(tr.amount), 0);
-    const workerExpBase = expenseTransactions.filter(tr => tr.includeInWorkerShare !== false).reduce((sum, tr) => sum + Number(tr.amount), 0);
-    const workerShare = (workerIncBase * 0.20) - (workerExpBase * 0.20);
-    const advances = transactions.filter(tr => tr.type === 'WORKER_ADVANCE').reduce((sum, tr) => sum + Number(tr.amount), 0);
-    const payable = workerShare - advances;
+           {renderTable(
+             ['Date', 'Category', 'Type', 'Description', 'Amount'],
+             transactions.map((t: any) => [t.date, t.category, t.type.replace('_',' '), t.description || '-', formatCurrency(t.amount)]),
+             ['Total', '', '', `${transactions.length} Records`, formatCurrency(transactions.reduce((s:number, t:any)=>s+Number(t.amount), 0))]
+           )}
+         </>
+       );
+    }
 
-    // Summary Box
-    doc.setDrawColor(6, 78, 59);
-    doc.setLineWidth(0.5);
-    doc.setFillColor(240, 253, 244); 
-    doc.roundedRect(14, 45, 182, 45, 2, 2, 'FD');
+    if (data.type === 'PARTNER_DISTRIBUTION') {
+      const { partners, financials } = data;
+      const { totalIncome, totalExpense, workerShare, netFarmProfit, distributableProfit, sharePerPartner } = financials.shareDetails;
+      
+      return (
+        <>
+          {renderHeader("Partner Profit Distribution", "Estimated Calculation")}
+          <div className="max-w-xl mx-auto border border-slate-400 rounded-lg p-8 bg-slate-50 print:bg-white">
+             <div className="space-y-4 text-lg">
+                <div className="flex justify-between"><span>Total Farm Revenue</span> <strong>{formatCurrency(totalIncome)}</strong></div>
+                <div className="flex justify-between"><span>Total Farm Expenses</span> <strong className="text-red-700">-{formatCurrency(totalExpense)}</strong></div>
+                <div className="border-t border-slate-300 my-2"></div>
+                <div className="flex justify-between font-bold"><span>Net Farm Profit</span> <strong>{formatCurrency(netFarmProfit)}</strong></div>
+                <div className="flex justify-between text-slate-600"><span>Less: Worker Share (20%)</span> <strong>-{formatCurrency(workerShare)}</strong></div>
+                <div className="border-t-2 border-slate-800 my-4"></div>
+                <div className="flex justify-between text-xl font-bold"><span>Distributable Profit (80%)</span> <strong>{formatCurrency(distributableProfit)}</strong></div>
+                
+                <div className="mt-8 pt-6 border-t border-dashed border-slate-300 text-center">
+                   <p className="text-slate-600 mb-2">Divided by {partners.length} Partners</p>
+                   <div className="text-3xl font-black bg-slate-100 py-4 border border-slate-300 rounded">
+                      {formatCurrency(sharePerPartner)}
+                      <span className="block text-xs font-normal text-slate-500 mt-1">PER PARTNER</span>
+                   </div>
+                </div>
+             </div>
+          </div>
+        </>
+      );
+    }
 
-    // Headers
-    doc.setFontSize(12);
-    doc.setTextColor(6, 78, 59);
-    doc.setFont(undefined, 'bold');
-    doc.text("Farm Performance", 20, 55);
-    doc.text("Worker Status (20% Share)", 110, 55);
-    doc.setDrawColor(200);
-    doc.line(20, 58, 90, 58);
-    doc.line(110, 58, 180, 58);
+    if (data.type === 'WORKER_SHARE') {
+      const { season, workerIncomeBase, workerGrossShare, workerExpenseBase, workerExpenseShare, workerNetShare, transactions } = data;
+      return (
+         <>
+           {renderHeader("Worker Share Statement (20%)", `Season: ${season.name}`)}
+           
+           <div className="border border-slate-300 p-4 mb-6 bg-slate-50 print:bg-white">
+              <div className="grid grid-cols-2 gap-8 text-sm">
+                 <div>
+                    <div className="flex justify-between mb-1"><span>Total Eligible Income:</span> <span>{formatCurrency(workerIncomeBase)}</span></div>
+                    <div className="flex justify-between font-bold text-emerald-700 text-lg"><span>(+) 20% Income Share:</span> <span>{formatCurrency(workerGrossShare)}</span></div>
+                 </div>
+                 <div>
+                    <div className="flex justify-between mb-1"><span>Total Eligible Expense:</span> <span>{formatCurrency(workerExpenseBase)}</span></div>
+                    <div className="flex justify-between font-bold text-red-700 text-lg"><span>(-) 20% Expense Share:</span> <span>{formatCurrency(workerExpenseShare)}</span></div>
+                 </div>
+              </div>
+              <div className="border-t-2 border-slate-800 mt-4 pt-2 flex justify-between text-xl font-bold">
+                 <span>Net Share Payable</span>
+                 <span>{formatCurrency(workerNetShare)}</span>
+              </div>
+           </div>
 
-    // Data
-    doc.setTextColor(0,0,0);
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'normal');
-    
-    doc.text("Total Revenue:", 20, 66);
-    doc.text(formatCurrencyPDF(totalIncome), 90, 66, { align: 'right' });
-    
-    doc.text("Total Expenses:", 20, 74);
-    doc.text(formatCurrencyPDF(totalExpense), 90, 74, { align: 'right' });
-    
-    doc.setFont(undefined, 'bold');
-    doc.text("Net Farm Profit:", 20, 84);
-    doc.text(formatCurrencyPDF(netProfit), 90, 84, { align: 'right' });
+           <h3 className="font-bold mb-2">Detailed Breakdown</h3>
+           {renderTable(
+             ['Date', 'Category', 'Type', 'Full Amount', '20% Share Part'],
+             transactions.map((t: any) => {
+                const sharePart = Number(t.amount) * 0.20;
+                const prefix = t.type === 'INCOME' ? '+' : '-';
+                return [t.date, t.category, t.type, formatCurrency(t.amount), `${prefix} ${formatCurrency(sharePart)}`];
+             }),
+             ['Net Share', '', '', '', formatCurrency(workerNetShare)]
+           )}
+         </>
+      );
+    }
 
-    doc.setFont(undefined, 'normal');
-    doc.text("Share Entitlement:", 110, 66);
-    doc.text(formatCurrencyPDF(workerShare), 180, 66, { align: 'right' });
-    
-    doc.text("Less Advances:", 110, 74);
-    doc.text(`-${formatCurrencyPDF(advances)}`, 180, 74, { align: 'right' });
-    
-    doc.setFont(undefined, 'bold');
-    doc.text("Final Payable:", 110, 84);
-    doc.text(formatCurrencyPDF(payable), 180, 84, { align: 'right' });
+    if (data.type === 'PARTNER_REPORT') {
+      const { partner, summary, transactions } = data;
+      return (
+         <>
+            {renderHeader(`Partner Statement: ${partner.name}`, "Detailed Report")}
+            
+            <div className="grid grid-cols-2 gap-4 mb-6 border border-slate-300 p-4">
+               <div>
+                  <h4 className="font-bold mb-2 underline">Inflows (Invested)</h4>
+                  <div className="flex justify-between"><span>Direct Capital:</span> <strong>{formatCurrency(summary.directContribution)}</strong></div>
+                  <div className="flex justify-between"><span>Expenses (Pocket):</span> <strong>{formatCurrency(summary.expensesPaid)}</strong></div>
+                  <div className="flex justify-between"><span>Advances (Pocket):</span> <strong>{formatCurrency(summary.advancesPaid)}</strong></div>
+                  <div className="border-t border-slate-300 mt-1 pt-1 flex justify-between font-bold"><span>Total Invested:</span> <span>{formatCurrency(summary.totalInvested)}</span></div>
+               </div>
+               <div>
+                  <h4 className="font-bold mb-2 underline">Outflows</h4>
+                  <div className="flex justify-between"><span>Cash Withdrawn:</span> <strong>-{formatCurrency(summary.withdrawal)}</strong></div>
+                  <div className="flex justify-between"><span>Income Kept (Pocket):</span> <strong>-{formatCurrency(summary.incomeReceived)}</strong></div>
+                  <div className="border-t-2 border-slate-800 mt-4 pt-1 flex justify-between text-lg font-bold">
+                     <span>Net Balance:</span> <span className={summary.netBalance >= 0 ? 'text-emerald-700' : 'text-red-700'}>{formatCurrency(summary.netBalance)}</span>
+                  </div>
+               </div>
+            </div>
 
-    // Table
-    const tableData = transactions.map(tr => [
-        tr.date,
-        tr.category,
-        tr.type,
-        formatCurrencyPDF(tr.amount),
-        tr.description || '-'
-    ]);
+            {renderTable(
+              ['Date', 'Category', 'Type', 'Description', 'Amount'],
+              transactions.map((t: any) => {
+                 let amountPrefix = ['INCOME', 'PARTNER_CONTRIBUTION'].includes(t.type) ? '+' : '-';
+                 // Adjustment for logic specific to partner pocket context
+                 if(t.paymentSource === 'PARTNER' && t.payerPartnerId === partner.id) {
+                     if(t.type === 'INCOME') amountPrefix = '-'; 
+                     else amountPrefix = '+'; 
+                 }
+                 if(t.type === 'PARTNER_WITHDRAWAL') amountPrefix = '-';
+                 if(t.type === 'PARTNER_CONTRIBUTION') amountPrefix = '+';
+                 
+                 return [t.date, t.category, t.type.replace('_',' '), t.description || '-', `${amountPrefix} ${formatCurrency(t.amount).replace('₹','')}`];
+              }),
+              ['Total', '', '', '', formatCurrency(transactions.reduce((s:number, t:any) => s + Number(t.amount), 0))]
+            )}
+         </>
+      );
+    }
 
-    autoTable(doc, {
-        startY: 100,
-        head: [['Date', 'Category', 'Type', 'Amount', 'Description']],
-        body: tableData,
-        headStyles: { fillColor: [6, 78, 59], textColor: 255, halign: 'left' },
-        bodyStyles: { textColor: 0 },
-        alternateRowStyles: { fillColor: [240, 253, 244] },
-        columnStyles: {
-            3: { halign: 'right', fontStyle: 'bold' } 
-        },
-        foot: [[
-            'Total', 
-            '', 
-            '', 
-            formatCurrencyPDF(transactions.reduce((sum, t) => sum + Number(t.amount), 0)), 
-            `${transactions.length} Records`
-        ]],
-        footStyles: { fillColor: [240, 253, 244], textColor: [6, 78, 59], fontStyle: 'bold', halign: 'right' }
-    });
+    if (data.type === 'FILTERED_LIST') {
+      const { transactions } = data;
+      const total = transactions.reduce((s:number, t:any) => s + Number(t.amount), 0);
+      return (
+        <>
+           {renderHeader("Transaction Report", "Filtered List")}
+           {renderTable(
+             ['Date', 'Category', 'Type', 'Description', 'Amount'],
+             transactions.map((t: any) => [t.date, t.category, t.type.replace('_',' '), t.description || '-', formatCurrency(t.amount)]),
+             ['Total', '', '', `${transactions.length} Items`, formatCurrency(total)]
+           )}
+        </>
+      );
+    }
 
-    doc.save(`AgriBooks_Report_${season.name.replace(/\s+/g, '_')}.pdf`);
+    return null;
+  };
+
+  return (
+    <div className="fixed inset-0 bg-white z-[100] overflow-auto text-black font-serif animate-in fade-in">
+       <div className="print:hidden fixed top-0 left-0 right-0 bg-slate-900 p-4 flex justify-between items-center shadow-lg z-50">
+          <div className="text-white">
+             <span className="font-bold text-lg">Print Preview</span>
+             <span className="text-xs text-slate-400 ml-2 block sm:inline">Press Ctrl+P to Print</span>
+          </div>
+          <div className="flex gap-4">
+             <button onClick={handlePrint} className="bg-emerald-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-emerald-600 flex items-center gap-2 transition-colors shadow-lg shadow-emerald-900/20"><Printer size={18}/> Print Now</button>
+             <button onClick={onExit} className="bg-white text-slate-900 px-4 py-2 rounded-lg font-bold hover:bg-slate-100 transition-colors">Close</button>
+          </div>
+       </div>
+       <div className="p-8 mt-20 print:mt-0 print:p-0 max-w-[210mm] mx-auto min-h-screen bg-white shadow-2xl print:shadow-none">
+          {renderContent()}
+       </div>
+    </div>
+  );
 };
 
 // --- SUB-COMPONENTS ---
@@ -450,55 +565,9 @@ const TransactionList = ({ transactions, seasons, partners, workers, onDelete, o
 
 // --- MODALS ---
 
-const PartnerShareModal = ({ isOpen, onClose, partners, financials }: any) => {
+const PartnerShareModal = ({ isOpen, onClose, partners, financials, onPrint }: any) => {
   if (!isOpen) return null;
   const { totalIncome = 0, totalExpense = 0, workerShare = 0, netFarmProfit = 0, distributableProfit = 0, sharePerPartner = 0 } = financials.shareDetails || {};
-
-  const generatePartnerSharePDF = () => {
-    const doc = new jsPDF();
-    drawPDFHeader(doc, "Partner Profit Distribution", "Estimated Share Calculation");
-
-    doc.setFillColor(255, 251, 235);
-    doc.setDrawColor(251, 191, 36);
-    doc.roundedRect(14, 45, 182, 85, 2, 2, 'FD');
-
-    const leftX = 20; const rightX = 160; let y = 55;
-    const addLine = (label: string, value: any, isBold = false, isRed = false) => {
-        doc.setFont(undefined, isBold ? 'bold' : 'normal');
-        doc.setTextColor(isRed ? 220 : 0, 0, 0);
-        doc.text(label, leftX, y);
-        doc.text(formatCurrencyPDF(value || 0), rightX, y, { align: 'right' });
-        y += 8;
-    };
-
-    addLine("Total Farm Revenue", totalIncome);
-    addLine("Total Farm Expenses", totalExpense, false, true);
-    doc.line(leftX, y-4, rightX, y-4);
-    
-    addLine("Net Farm Profit", netFarmProfit, true);
-    y += 4;
-    addLine("Less: Worker Share (20%)", workerShare, false, true);
-    doc.line(leftX, y-4, rightX, y-4);
-    
-    doc.setFontSize(14);
-    doc.setTextColor(6, 78, 59);
-    addLine("Distributable Profit (80%)", distributableProfit, true);
-    
-    y += 8;
-    doc.setFontSize(10);
-    doc.setTextColor(0,0,0);
-    doc.text(`Divided by ${partners.length} Partners:`, leftX, y);
-    y += 10;
-    
-    doc.setFillColor(6, 78, 59);
-    doc.rect(leftX, y-6, 170, 12, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(12);
-    doc.setFont(undefined, 'bold');
-    doc.text(`Share Per Partner: ${formatCurrencyPDF(sharePerPartner)}`, leftX + 5, y+2);
-
-    doc.save("AgriBooks_Partner_Distribution.pdf");
-  };
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
@@ -538,8 +607,8 @@ const PartnerShareModal = ({ isOpen, onClose, partners, financials }: any) => {
                     <p className="text-xs text-emerald-800 uppercase font-bold mb-1">Share Per Partner ({partners.length})</p>
                     <p className="text-3xl font-black text-emerald-700">{formatCurrency(sharePerPartner)}</p>
                 </div>
-                <button onClick={generatePartnerSharePDF} className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-900 transition-all shadow-lg shadow-slate-200">
-                    <Download size={18} /> Download Calculation PDF
+                <button onClick={onPrint} className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-900 transition-all shadow-lg shadow-slate-200">
+                    <Printer size={18} /> Print Calculation
                 </button>
             </div>
         </div>
@@ -547,89 +616,9 @@ const PartnerShareModal = ({ isOpen, onClose, partners, financials }: any) => {
   );
 };
 
-const WorkerShareModal = ({ isOpen, onClose, transactions, partners, season, onUpdateTransaction, workerIncomeBase, workerExpenseBase, workerGrossShare, workerExpenseShare, workerNetShare, lang }: any) => {
+const WorkerShareModal = ({ isOpen, onClose, transactions, partners, season, onUpdateTransaction, workerIncomeBase, workerExpenseBase, workerGrossShare, workerExpenseShare, workerNetShare, onPrint, lang }: any) => {
     if (!isOpen) return null;
     const t = TRANSLATIONS[lang as Language];
-
-    const generateSharePDF = () => {
-        const doc = new jsPDF();
-        
-        drawPDFHeader(doc, "Worker Share Statement (20%)", `Season: ${season.name}`);
-
-        doc.setFillColor(248, 250, 252); 
-        doc.setDrawColor(200);
-        doc.roundedRect(14, 45, 182, 60, 2, 2, 'FD');
-        
-        const startX = 20;
-        let startY = 55;
-        const col2X = 140;
-
-        const addRow = (label: string, value: any, isBold = false, color = [0,0,0] as [number, number, number]) => {
-            doc.setFont(undefined, isBold ? 'bold' : 'normal');
-            doc.setTextColor(color[0], color[1], color[2]);
-            doc.text(label, startX, startY);
-            doc.text(formatCurrencyPDF(value), col2X, startY, { align: 'right' });
-            startY += 8;
-        };
-
-        addRow("Total Eligible Income", workerIncomeBase);
-        addRow("(+) 20% Share of Income", workerGrossShare, true, [6, 78, 59]); 
-        
-        doc.setDrawColor(220);
-        doc.line(startX, startY-4, 190, startY-4);
-
-        addRow("Total Eligible Expense", workerExpenseBase);
-        addRow("(-) 20% Liability of Expense", workerExpenseShare, true, [185, 28, 28]); 
-
-        doc.setDrawColor(0);
-        doc.setLineWidth(0.5);
-        doc.line(startX, startY-4, 190, startY-4);
-        startY += 2;
-
-        doc.setFontSize(14);
-        addRow("= Net Share Payable", workerNetShare, true, [0, 0, 0]);
-
-        const relevantTrans = transactions.filter((tr: Transaction) => 
-            tr.includeInWorkerShare !== false && 
-            (tr.type === 'INCOME' || tr.type === 'EXPENSE')
-        );
-
-        const rows = relevantTrans.map((tr: Transaction) => {
-             const sharePart = Number(tr.amount) * 0.20;
-             const prefix = tr.type === 'INCOME' ? '+ ' : '- ';
-             const shareString = prefix + formatCurrencyPDF(sharePart).replace('Rs. ', '');
-
-             return [
-                 tr.date,
-                 tr.category,
-                 tr.type,
-                 formatCurrencyPDF(tr.amount),
-                 `Rs. ${shareString}`
-             ];
-        });
-
-        autoTable(doc, {
-            startY: 120,
-            head: [['Date', 'Category', 'Type', 'Full Amount', '20% Part']],
-            body: rows,
-            headStyles: { fillColor: [6, 78, 59], textColor: 255 },
-            alternateRowStyles: { fillColor: [240, 253, 244] },
-            columnStyles: {
-                3: { halign: 'right' },
-                4: { halign: 'right', fontStyle: 'bold' } 
-            },
-            foot: [[
-                'Net Share', 
-                '', 
-                '', 
-                '', 
-                formatCurrencyPDF(workerNetShare)
-            ]],
-            footStyles: { fillColor: [240, 253, 244], textColor: [6, 78, 59], fontStyle: 'bold', halign: 'right' }
-        });
-
-        doc.save(`WorkerShare_${season.name}.pdf`);
-    };
 
     const TransactionRow = ({ tr }: { tr: Transaction }) => {
         const partner = partners.find((p: Partner) => p.id === tr.payerPartnerId);
@@ -677,8 +666,8 @@ const WorkerShareModal = ({ isOpen, onClose, transactions, partners, season, onU
                         <p className="text-xs text-slate-500 mt-1">Select/Unselect transactions to adjust share</p>
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={generateSharePDF} className="p-2 bg-white border border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 rounded-xl text-slate-600 transition-colors flex items-center gap-2 font-medium text-xs shadow-sm">
-                             <Download size={16}/> PDF
+                        <button onClick={onPrint} className="p-2 bg-white border border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 rounded-xl text-slate-600 transition-colors flex items-center gap-2 font-medium text-xs shadow-sm">
+                             <Printer size={16}/> Print
                         </button>
                         <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-500"><X size={20}/></button>
                     </div>
@@ -987,7 +976,7 @@ const TransactionForm = ({ initialData, onSave, onCancel, seasons, workers, part
 
 // --- Season Card (Used by SeasonsView) ---
 
-const SeasonCard = ({ season, transactions, workers, partners, onCloseSeason, onDeleteSeason, onUpdateTransaction, lang }: any) => {
+const SeasonCard = ({ season, transactions, workers, partners, onCloseSeason, onDeleteSeason, onUpdateTransaction, onPrint, lang }: any) => {
   const [showShareDetails, setShowShareDetails] = useState(false);
   const t = TRANSLATIONS[lang as Language];
 
@@ -1010,8 +999,13 @@ const SeasonCard = ({ season, transactions, workers, partners, onCloseSeason, on
   
   const finalPayable = workerNetShare - seasonAdvances;
 
-  const handleDownloadReport = () => {
-    generateSeasonPDF(season, transactions, lang);
+  const handlePrintReport = () => {
+    onPrint({
+      type: 'SEASON_REPORT',
+      season,
+      transactions,
+      summary: { totalIncome, totalExpense, netProfit: totalIncome - totalExpense, workerShare: workerGrossShare - workerExpenseShare, advances: seasonAdvances, payable: finalPayable }
+    });
   };
 
   return (
@@ -1032,10 +1026,10 @@ const SeasonCard = ({ season, transactions, workers, partners, onCloseSeason, on
         </div>
         <div className="flex items-center gap-2">
           <button 
-             onClick={handleDownloadReport}
+             onClick={handlePrintReport}
              className="text-sm bg-white text-blue-600 px-4 py-2 rounded-xl border border-blue-100 hover:bg-blue-50 flex items-center gap-2 font-semibold shadow-sm transition-colors"
           >
-             <Download className="w-4 h-4"/> {t.downloadReport}
+             <Printer className="w-4 h-4"/> {t.downloadReport}
           </button>
           {season.status === 'OPEN' && (
             <button 
@@ -1134,6 +1128,7 @@ const SeasonCard = ({ season, transactions, workers, partners, onCloseSeason, on
         workerGrossShare={workerGrossShare}
         workerExpenseShare={workerExpenseShare}
         workerNetShare={workerNetShare}
+        onPrint={(data:any) => onPrint({type: 'WORKER_SHARE', season, workerIncomeBase, workerExpenseBase, workerGrossShare, workerExpenseShare, workerNetShare, transactions: transactions.filter((t: any) => t.includeInWorkerShare !== false && (t.type === 'INCOME' || t.type === 'EXPENSE'))})}
         lang={lang}
     />
     </>
@@ -1228,7 +1223,7 @@ const Dashboard = ({ financials, transactions, seasons, partners, workers, onDel
   );
 };
 
-const SeasonsView = ({ seasons, transactions, workers, partners, onAddSeason, onCloseSeason, onDeleteSeason, onUpdateTransaction, lang }: any) => {
+const SeasonsView = ({ seasons, transactions, workers, partners, onAddSeason, onCloseSeason, onDeleteSeason, onUpdateTransaction, onPrint, lang }: any) => {
   const [isCreating, setIsCreating] = useState(false);
   const [newSeasonName, setNewSeasonName] = useState('');
   const t = TRANSLATIONS[lang as Language];
@@ -1285,6 +1280,7 @@ const SeasonsView = ({ seasons, transactions, workers, partners, onAddSeason, on
             onCloseSeason={onCloseSeason}
             onDeleteSeason={onDeleteSeason}
             onUpdateTransaction={onUpdateTransaction}
+            onPrint={onPrint}
             lang={lang}
           />
         ))}
@@ -1385,7 +1381,7 @@ const WorkersView = ({ workers, transactions, onAddWorker, onDeleteWorker, lang 
   );
 };
 
-const TransactionManager = ({ transactions, seasons, partners, workers, categories, onAddTransaction, onUpdateTransaction, onDeleteTransaction, onAddCategory, onNotify, lang }: any) => {
+const TransactionManager = ({ transactions, seasons, partners, workers, categories, onAddTransaction, onUpdateTransaction, onDeleteTransaction, onAddCategory, onNotify, onPrint, lang }: any) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -1431,32 +1427,6 @@ const TransactionManager = ({ transactions, seasons, partners, workers, categori
   const handleResetFilters = () => setFilters(defaultFilters);
   const activeFilterCount = Object.values(filters).filter(v => v !== 'ALL' && v !== '').length;
 
-  const generateFilteredPDF = () => {
-      const doc = new jsPDF();
-      drawPDFHeader(doc, "Transaction Report", "Filtered List");
-      
-      const rows = filteredTransactions.map((tr: Transaction) => [
-          tr.date,
-          tr.category,
-          tr.type,
-          formatCurrencyPDF(tr.amount),
-          tr.description || '-'
-      ]);
-
-      autoTable(doc, {
-          startY: 40,
-          head: [['Date', 'Category', 'Type', 'Amount', 'Description']],
-          body: rows,
-          headStyles: { fillColor: [6, 78, 59] },
-          columnStyles: { 3: { halign: 'right' } },
-          // NEW: Footer for Filtered List
-          foot: [['Total', '', '', formatCurrencyPDF(filteredTransactions.reduce((sum, t) => sum + Number(t.amount), 0)), `${filteredTransactions.length} Items`]],
-          footStyles: { fontStyle: 'bold', halign: 'right' }
-      });
-      
-      doc.save(`Transactions_Export_${new Date().toISOString().slice(0,10)}.pdf`);
-  };
-
   return (
     <div className="space-y-6 pb-20 md:pb-0 animate-in fade-in">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1464,11 +1434,11 @@ const TransactionManager = ({ transactions, seasons, partners, workers, categori
         <div className="flex gap-2">
             {activeFilterCount > 0 && (
                 <button 
-                  onClick={generateFilteredPDF}
+                  onClick={() => onPrint({ type: 'FILTERED_LIST', transactions: filteredTransactions })}
                   className="px-3 py-2.5 bg-slate-800 text-white rounded-xl flex items-center gap-2 hover:bg-slate-900 transition-colors shadow-lg shadow-slate-300"
                   title="Export Current List to PDF"
                 >
-                   <Printer size={18} /> PDF
+                   <Printer size={18} /> Print
                 </button>
             )}
             <button 
@@ -1621,86 +1591,12 @@ const TransactionManager = ({ transactions, seasons, partners, workers, categori
   );
 };
 
-const PartnersView = ({ partners, transactions, financials, lang }: any) => {
+const PartnersView = ({ partners, transactions, financials, onPrint, lang }: any) => {
   const t = TRANSLATIONS[lang as Language];
   const [showShareCalc, setShowShareCalc] = useState(false); 
 
-  const generatePartnerPDF = (partner: Partner, partnerTrans: Transaction[], summary: any) => {
-      const doc = new jsPDF();
-      
-      drawPDFHeader(doc, `Partner Statement: ${partner.name}`, `Date: ${new Date().toLocaleDateString()}`);
-
-      // Summary Box
-      doc.setDrawColor(200);
-      doc.setFillColor(248, 250, 252);
-      doc.roundedRect(14, 45, 180, 50, 2, 2, 'FD');
-      
-      const leftCol = 20;
-      const rightCol = 110;
-      const valOffset = 70;
-
-      doc.setFontSize(10);
-      doc.text("Capital Injected (Direct):", leftCol, 55);
-      doc.text(formatCurrencyPDF(summary.directContribution), leftCol + valOffset, 55, { align: 'right' });
-      
-      doc.text("Expenses Paid (Pocket):", leftCol, 63);
-      doc.text(formatCurrencyPDF(summary.expensesPaid), leftCol + valOffset, 63, { align: 'right' });
-      
-      doc.text("Advances Given (Pocket):", leftCol, 71);
-      doc.text(formatCurrencyPDF(summary.advancesPaid), leftCol + valOffset, 71, { align: 'right' });
-      
-      doc.setFont(undefined, 'bold');
-      doc.text("Total Invested:", leftCol, 85);
-      doc.text(formatCurrencyPDF(summary.totalInvested), leftCol + valOffset, 85, { align: 'right' });
-      
-      // Right Column
-      doc.setFont(undefined, 'normal');
-      doc.text("Cash Withdrawn:", rightCol, 55);
-      doc.text(`-${formatCurrencyPDF(summary.withdrawal)}`, rightCol + valOffset, 55, { align: 'right' });
-      
-      doc.text("Income Kept (Pocket):", rightCol, 63);
-      doc.text(`-${formatCurrencyPDF(summary.incomeReceived)}`, rightCol + valOffset, 63, { align: 'right' });
-      
-      doc.setFont(undefined, 'bold');
-      doc.text("Net Balance (Invested):", rightCol, 85);
-      doc.setTextColor(summary.netBalance >= 0 ? 6 : 220, 78, 59); // Green or Red
-      doc.text(formatCurrencyPDF(summary.netBalance), rightCol + valOffset, 85, { align: 'right' });
-
-      // Transactions
-      const rows = partnerTrans.map(tr => {
-          let typeLabel = tr.type.replace('_', ' ');
-          let amountPrefix = ['INCOME', 'PARTNER_CONTRIBUTION'].includes(tr.type) ? '+' : '-';
-          if(tr.paymentSource === 'PARTNER' && tr.payerPartnerId === partner.id) {
-              if(tr.type === 'INCOME') amountPrefix = '-'; 
-              else amountPrefix = '+'; 
-          }
-          if(tr.type === 'PARTNER_WITHDRAWAL') amountPrefix = '-';
-          if(tr.type === 'PARTNER_CONTRIBUTION') amountPrefix = '+';
-
-          return [
-              tr.date,
-              tr.category,
-              typeLabel,
-              `${amountPrefix} ${formatCurrencyPDF(tr.amount).replace('Rs. ','')}`, // Force string
-              tr.description || '-'
-          ];
-      });
-
-      autoTable(doc, {
-          startY: 105,
-          head: [['Date', 'Category', 'Type', 'Amount', 'Description']],
-          body: rows,
-          headStyles: { fillColor: [6, 78, 59], textColor: 255 },
-          alternateRowStyles: { fillColor: [240, 253, 244] },
-          columnStyles: {
-            3: { halign: 'right', fontStyle: 'bold' } // Align Amount Right
-          },
-          // NEW: Footer
-          foot: [['Total', '', '', formatCurrencyPDF(partnerTrans.reduce((sum, t) => sum + Number(t.amount), 0)), '']],
-          footStyles: { fontStyle: 'bold', halign: 'right' }
-      });
-
-      doc.save(`PartnerReport_${partner.name}.pdf`);
+  const handlePrintPartner = (partner: Partner, partnerTrans: any[], summary: any) => {
+      onPrint({ type: 'PARTNER_REPORT', partner, transactions: partnerTrans, summary });
   };
 
   return (
@@ -1753,10 +1649,10 @@ const PartnersView = ({ partners, transactions, financials, lang }: any) => {
                     </div>
                 </div>
                 <button 
-                    onClick={() => generatePartnerPDF(partner, partnerTrans, summary)}
+                    onClick={() => handlePrintPartner(partner, partnerTrans, summary)}
                     className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 hover:text-emerald-600 transition-colors shadow-sm"
                 >
-                    <Download size={16} /> Download Report
+                    <Printer size={16} /> Print Report
                 </button>
              </div>
              
@@ -1834,6 +1730,7 @@ const PartnersView = ({ partners, transactions, financials, lang }: any) => {
         onClose={() => setShowShareCalc(false)}
         partners={partners}
         financials={financials}
+        onPrint={() => onPrint({ type: 'PARTNER_DISTRIBUTION', partners, financials })}
      />
   </div>
 );
@@ -1942,6 +1839,7 @@ const DataManagementView = ({ onImport, onExport, seasons, onExportSeason, lang 
 const App = () => {
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'TRANSACTIONS' | 'SEASONS' | 'WORKERS' | 'PARTNERS' | 'DATA'>('DASHBOARD');
   const [lang, setLang] = useState<Language>(() => (localStorage.getItem('agri_lang') as Language) || 'EN');
+  const [printData, setPrintData] = useState<any>(null);
 
   useEffect(() => {
     localStorage.setItem('agri_lang', lang);
@@ -2208,16 +2106,29 @@ const App = () => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const json = JSON.parse(e.target?.result as string);
-        if (json.transactions && (json.seasons || json.season)) {
+        const content = e.target?.result as string;
+        if (!content) throw new Error("Empty file");
+        
+        const json = JSON.parse(content);
+        
+        // Robust Validation
+        const isValidBackup = (json.transactions && Array.isArray(json.transactions)) || 
+                              (json.workers && Array.isArray(json.workers)) ||
+                              (json.seasons || json.season);
+
+        if (isValidBackup) {
+           // Normalize single 'season' to 'seasons' array if old format
+           if (json.season && !json.seasons) {
+               json.seasons = [json.season];
+           }
            setPendingImport(json);
-           // Clear input so same file can be selected again if needed
+           // Clear input
            event.target.value = '';
         } else {
-           showNotification("Invalid backup file format.", 'error');
+           showNotification("Invalid backup file: Missing required data.", 'error');
         }
       } catch (err) {
-        showNotification("Error reading file", 'error');
+        showNotification("Error reading file: Invalid JSON format.", 'error');
       }
     };
     reader.readAsText(file);
@@ -2225,34 +2136,52 @@ const App = () => {
 
   const confirmImport = () => {
     if (pendingImport) {
-       // Helper to merge lists by ID
-       const mergeById = (current: any[], incoming: any[]) => {
+       // Helper: Merge new items into current items, updating if ID exists, adding if not.
+       // Preserves properties of existing items if new item doesn't have them (though in this case we likely want full overwrite for that ID)
+       // We use spread ...item to let import override local for that specific ID.
+       const smartMerge = (current: any[], incoming: any[]) => {
+          if (!incoming || !Array.isArray(incoming)) return current;
+          
           const map = new Map(current.map(i => [i.id, i]));
-          incoming.forEach(i => map.set(i.id, i)); // Incoming overwrites existing if same ID
+          
+          incoming.forEach(item => {
+             if (item && item.id) {
+                 const existing = map.get(item.id);
+                 // Merge logic: If existing, merge fields (Import takes precedence). If new, add.
+                 map.set(item.id, existing ? { ...existing, ...item } : item);
+             }
+          });
           return Array.from(map.values());
        };
 
-       setTransactions(prev => mergeById(prev, pendingImport.transactions || []));
-       setWorkers(prev => mergeById(prev, pendingImport.workers || []));
-       setPartners(prev => mergeById(prev, pendingImport.partners || []));
-       setSeasons(prev => mergeById(prev, pendingImport.seasons || (pendingImport.season ? [pendingImport.season] : [])));
-       
-       if (pendingImport.categories) {
-          setCategories(prev => {
-             const next = { ...prev };
-             Object.keys(pendingImport.categories).forEach(k => {
-                 // @ts-ignore
-                 const existingList = prev[k] || [];
-                 // @ts-ignore
-                 const incomingList = pendingImport.categories[k] || [];
-                 // @ts-ignore
-                 next[k] = Array.from(new Set([...existingList, ...incomingList]));
-             });
-             return next;
-          });
-       }
+       try {
+           setTransactions(prev => smartMerge(prev, pendingImport.transactions));
+           setWorkers(prev => smartMerge(prev, pendingImport.workers));
+           setPartners(prev => smartMerge(prev, pendingImport.partners));
+           setSeasons(prev => smartMerge(prev, pendingImport.seasons));
+           
+           if (pendingImport.categories) {
+              setCategories(prev => {
+                 const next = { ...prev };
+                 Object.keys(pendingImport.categories).forEach(k => {
+                     const key = k as keyof CategoryMap;
+                     const incomingCats = pendingImport.categories[key];
+                     if (Array.isArray(incomingCats)) {
+                         // Case-insensitive check to avoid duplicate categories like "Seeds" and "seeds"
+                         const existingLower = new Set(prev[key].map(c => c.toLowerCase().trim()));
+                         const newUnique = incomingCats.filter((c: string) => !existingLower.has(c.toLowerCase().trim()));
+                         next[key] = [...prev[key], ...newUnique];
+                     }
+                 });
+                 return next;
+              });
+           }
 
-       showNotification("Data merged successfully!", 'success');
+           showNotification("Data merged successfully!", 'success');
+       } catch (e) {
+           console.error(e);
+           showNotification("An error occurred during merging.", 'error');
+       }
        setPendingImport(null);
     }
   };
@@ -2284,6 +2213,7 @@ const App = () => {
           onDeleteTransaction={setDeleteId}
           onAddCategory={handleAddCategory}
           onNotify={showNotification}
+          onPrint={setPrintData}
           lang={lang}
         />
       );
@@ -2297,6 +2227,7 @@ const App = () => {
           onCloseSeason={handleCloseSeason}
           onDeleteSeason={handleDeleteSeason}
           onUpdateTransaction={handleUpdateTransaction} // Added prop
+          onPrint={setPrintData}
           lang={lang}
         />
       );
@@ -2309,7 +2240,7 @@ const App = () => {
           lang={lang}
         />
       );
-      case 'PARTNERS': return <PartnersView partners={partners} transactions={transactions} financials={financials} lang={lang} />;
+      case 'PARTNERS': return <PartnersView partners={partners} transactions={transactions} financials={financials} onPrint={setPrintData} lang={lang} />;
       case 'DATA': return (
         <DataManagementView 
            onImport={handleImportData} 
@@ -2324,6 +2255,11 @@ const App = () => {
   };
 
   const t = TRANSLATIONS[lang];
+
+  // --- Render (Print Mode Check) ---
+  if (printData) {
+     return <PrintTemplate data={printData} onExit={() => setPrintData(null)} />;
+  }
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-slate-50 font-sans text-slate-900 selection:bg-emerald-200">
