@@ -10,6 +10,7 @@ import {
   Trash2, 
   Edit, 
   Plus, 
+  Minus,
   Save, 
   X, 
   LogOut,
@@ -58,6 +59,8 @@ interface Season {
 interface Partner {
   id: string;
   name: string;
+  phone: string;
+  joinedDate: string;
 }
 
 interface Worker {
@@ -103,8 +106,8 @@ interface CategoryMap {
 // --- Initial Data ---
 
 const INITIAL_PARTNERS: Partner[] = [
-  { id: 'p1', name: 'Girish' },
-  { id: 'p2', name: 'Dilip' },
+  { id: 'p1', name: 'Girish', phone: '', joinedDate: '2025-01-01' },
+  { id: 'p2', name: 'Dilip', phone: '', joinedDate: '2025-01-01' },
 ];
 
 const DEFAULT_CATEGORIES: CategoryMap = {
@@ -234,8 +237,18 @@ interface PrintProps {
 }
 
 const PrintTemplate = ({ data, onExit }: PrintProps) => {
-  // Removed auto-print useEffect to prevent sandbox "Ignored call to print()" error.
-  
+  const [zoom, setZoom] = useState(1);
+
+  useEffect(() => {
+    // Auto-fit logic for mobile screens
+    const paperWidthPx = 794; // A4 width at approx 96dpi
+    const screenWidth = window.innerWidth;
+    if (screenWidth < paperWidthPx + 40) {
+       // Scale to fit screen with some padding
+       setZoom((screenWidth - 32) / paperWidthPx);
+    }
+  }, []);
+
   const handlePrint = () => {
     try {
         window.print();
@@ -271,7 +284,7 @@ const PrintTemplate = ({ data, onExit }: PrintProps) => {
          </thead>
          <tbody>
            {rows.map((row, idx) => (
-             <tr key={idx} className="border-b border-slate-200">
+             <tr key={idx} className="border-b border-slate-200 break-inside-avoid">
                 {row.map((cell, i) => (
                   <td key={i} className={`border border-slate-300 px-3 py-2 text-slate-700 ${i === headers.length - 1 ? 'text-right font-mono font-medium' : ''}`}>
                     {cell}
@@ -282,7 +295,7 @@ const PrintTemplate = ({ data, onExit }: PrintProps) => {
          </tbody>
          {footers && (
             <tfoot>
-               <tr className="bg-slate-100 font-bold border-t-2 border-slate-400">
+               <tr className="bg-slate-100 font-bold border-t-2 border-slate-400 break-inside-avoid">
                  {footers.map((f, i) => (
                     <td key={i} className={`px-3 py-2 text-slate-900 ${i === footers.length - 1 ? 'text-right' : ''}`}>{f}</td>
                  ))}
@@ -300,7 +313,7 @@ const PrintTemplate = ({ data, onExit }: PrintProps) => {
          <>
            {renderHeader("Season Financial Report", `Season: ${season.name}`)}
            
-           <div className="grid grid-cols-2 gap-6 mb-8 border border-slate-300 rounded p-4">
+           <div className="grid grid-cols-2 gap-6 mb-8 border border-slate-300 rounded p-4 break-inside-avoid">
               <div>
                  <h3 className="font-bold border-b border-slate-200 pb-2 mb-2">Farm Performance</h3>
                  <div className="flex justify-between py-1 border-b border-dashed border-slate-200"><span>Total Revenue:</span> <strong>{formatCurrency(summary.totalIncome)}</strong></div>
@@ -331,7 +344,7 @@ const PrintTemplate = ({ data, onExit }: PrintProps) => {
       return (
         <>
           {renderHeader("Partner Profit Distribution", "Estimated Calculation")}
-          <div className="max-w-xl mx-auto border border-slate-400 rounded-lg p-8 bg-slate-50 print:bg-white">
+          <div className="max-w-xl mx-auto border border-slate-400 rounded-lg p-8 bg-slate-50 print:bg-white break-inside-avoid">
              <div className="space-y-4 text-lg">
                 <div className="flex justify-between"><span>Total Farm Revenue</span> <strong>{formatCurrency(totalIncome)}</strong></div>
                 <div className="flex justify-between"><span>Total Farm Expenses</span> <strong className="text-red-700">-{formatCurrency(totalExpense)}</strong></div>
@@ -360,7 +373,7 @@ const PrintTemplate = ({ data, onExit }: PrintProps) => {
          <>
            {renderHeader("Worker Share Statement (20%)", `Season: ${season.name}`)}
            
-           <div className="border border-slate-300 p-4 mb-6 bg-slate-50 print:bg-white">
+           <div className="border border-slate-300 p-4 mb-6 bg-slate-50 print:bg-white break-inside-avoid">
               <div className="grid grid-cols-2 gap-8 text-sm">
                  <div>
                     <div className="flex justify-between mb-1"><span>Total Eligible Income:</span> <span>{formatCurrency(workerIncomeBase)}</span></div>
@@ -397,7 +410,7 @@ const PrintTemplate = ({ data, onExit }: PrintProps) => {
          <>
             {renderHeader(`Partner Statement: ${partner.name}`, "Detailed Report")}
             
-            <div className="grid grid-cols-2 gap-4 mb-6 border border-slate-300 p-4">
+            <div className="grid grid-cols-2 gap-4 mb-6 border border-slate-300 p-4 break-inside-avoid">
                <div>
                   <h4 className="font-bold mb-2 underline">Inflows (Invested)</h4>
                   <div className="flex justify-between"><span>Direct Capital:</span> <strong>{formatCurrency(summary.directContribution)}</strong></div>
@@ -454,19 +467,37 @@ const PrintTemplate = ({ data, onExit }: PrintProps) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-white z-[100] overflow-auto text-black font-serif animate-in fade-in">
-       <div className="print:hidden fixed top-0 left-0 right-0 bg-slate-900 p-4 flex justify-between items-center shadow-lg z-50">
-          <div className="text-white">
-             <span className="font-bold text-lg">Print Preview</span>
-             <span className="text-xs text-slate-400 ml-2 block sm:inline">Press Ctrl+P to Print</span>
+    <div className="fixed inset-0 bg-slate-100 z-[100] flex flex-col animate-in fade-in print:bg-white print:relative print:inset-auto print:block print:h-auto">
+       {/* Toolbar */}
+       <div className="print:hidden bg-slate-900 text-white p-3 shadow-lg z-50 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-4">
+             <span className="font-bold text-sm md:text-lg truncate">Print Preview</span>
+             {/* Zoom Controls */}
+             <div className="flex items-center bg-slate-800 rounded-lg p-1 border border-slate-700">
+                <button onClick={() => setZoom(z => Math.max(0.4, z - 0.1))} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors" title="Zoom Out"><Minus size={16}/></button>
+                <span className="text-xs w-10 text-center font-mono text-slate-300">{Math.round(zoom * 100)}%</span>
+                <button onClick={() => setZoom(z => Math.min(2.5, z + 0.1))} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors" title="Zoom In"><Plus size={16}/></button>
+             </div>
           </div>
-          <div className="flex gap-4">
-             <button onClick={handlePrint} className="bg-emerald-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-emerald-600 flex items-center gap-2 transition-colors shadow-lg shadow-emerald-900/20"><Printer size={18}/> Print Now</button>
-             <button onClick={onExit} className="bg-white text-slate-900 px-4 py-2 rounded-lg font-bold hover:bg-slate-100 transition-colors">Close</button>
+          <div className="flex gap-3">
+             <button onClick={handlePrint} className="bg-emerald-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-emerald-600 flex items-center gap-2 transition-colors text-sm shadow-lg shadow-emerald-900/20"><Printer size={16}/> <span className="hidden sm:inline">Print</span></button>
+             <button onClick={onExit} className="bg-white text-slate-900 px-4 py-2 rounded-lg font-bold hover:bg-slate-200 transition-colors text-sm">Close</button>
           </div>
        </div>
-       <div className="p-8 mt-20 print:mt-0 print:p-0 max-w-[210mm] mx-auto min-h-screen bg-white shadow-2xl print:shadow-none">
-          {renderContent()}
+
+       {/* Scrollable Canvas */}
+       <div className="flex-1 overflow-auto bg-slate-100 p-4 md:p-8 flex justify-center print:p-0 print:bg-white print:block print:overflow-visible">
+          <div 
+            style={{ 
+                transform: `scale(${zoom})`, 
+                transformOrigin: 'top center',
+            }}
+            className="transition-transform duration-200 ease-out print:transform-none"
+          >
+              <div className="w-[210mm] min-h-[297mm] bg-white shadow-2xl p-[15mm] md:p-[20mm] text-black font-serif print:w-full print:shadow-none print:p-0 print:m-0 print:min-h-0">
+                 {renderContent()}
+              </div>
+          </div>
        </div>
     </div>
   );
