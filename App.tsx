@@ -37,7 +37,18 @@ import {
   Search,
   Coins,
   Eye,
-  Printer
+  Printer,
+  Cloud,
+  RefreshCw,
+  Settings,
+  Globe,
+  CloudUpload,
+  ExternalLink,
+  Copy,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Clipboard
 } from 'lucide-react';
 
 // --- Types ---
@@ -101,6 +112,11 @@ interface CategoryMap {
   EXPENSE: string[];
   WORKER_ADVANCE: string[];
   PARTNER: string[];
+}
+
+interface ServerConfig {
+  url: string;
+  apiKey: string;
 }
 
 // --- Initial Data ---
@@ -167,7 +183,12 @@ const TRANSLATIONS = {
     sortBy: "Sort By",
     reset: "Reset Filters",
     filteredTotal: "Filtered Summary",
-    apply: "Apply Filters"
+    apply: "Apply Filters",
+    cloudSync: "Cloud Sync",
+    uploadToCloud: "Upload to Server",
+    downloadFromCloud: "Download from Server",
+    serverConfig: "Server Configuration",
+    lastSynced: "Last Synced"
   },
   GU: {
     dashboard: "ડેશબોર્ડ (Dashboard)",
@@ -216,7 +237,12 @@ const TRANSLATIONS = {
     sortBy: "ક્રમ (Sort)",
     reset: "રીસેટ કરો",
     filteredTotal: "તારણ (Summary)",
-    apply: "લાગુ કરો"
+    apply: "લાગુ કરો",
+    cloudSync: "સર્વર સિંક",
+    uploadToCloud: "સર્વર પર મોકલો",
+    downloadFromCloud: "સર્વર પરથી લો",
+    serverConfig: "સર્વર સેટિંગ્સ",
+    lastSynced: "છેલ્લું સિંક"
   }
 };
 
@@ -1168,7 +1194,7 @@ const SeasonCard = ({ season, transactions, workers, partners, onCloseSeason, on
 
 // --- VIEW COMPONENTS (Defined After Helpers/Cards) ---
 
-const Dashboard = ({ financials, transactions, seasons, partners, workers, onDeleteTransaction, onEditTransaction, onViewAll, lang }: any) => {
+const Dashboard = ({ financials, transactions, seasons, partners, workers, onDeleteTransaction, onEditTransaction, onViewAll, lang, lastSynced }: any) => {
   const t = TRANSLATIONS[lang as Language];
   return (
     <div className="space-y-6 pb-20 md:pb-0 animate-in fade-in">
@@ -1767,36 +1793,145 @@ const PartnersView = ({ partners, transactions, financials, onPrint, lang }: any
 );
 };
 
-const DataManagementView = ({ onImport, onExport, seasons, onExportSeason, lang }: any) => {
+const DataManagementView = ({ onImport, onExport, seasons, onExportSeason, lang, serverConfig, onSaveServerConfig, onCloudSync, isSyncing, lastSynced, showServerConfig, setShowServerConfig, onCopyRaw }: any) => {
   const t = TRANSLATIONS[lang as Language];
+  const [tempConfig, setTempConfig] = useState<ServerConfig>(serverConfig);
+
+  // Safety Status Calculation
+  const getSafetyStatus = () => {
+      if (!lastSynced) return { color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200', icon: ShieldAlert, label: 'At Risk', msg: 'Data never backed up!' };
+      const days = (new Date().getTime() - new Date(lastSynced).getTime()) / (1000 * 3600 * 24);
+      if (days > 7) return { color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200', icon: ShieldAlert, label: 'Medium Risk', msg: `Last backup was ${Math.floor(days)} days ago.` };
+      return { color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: ShieldCheck, label: 'Safe', msg: 'Backup is fresh.' };
+  };
+  const safety = getSafetyStatus();
+
+  const handleConfigSave = () => {
+      onSaveServerConfig(tempConfig);
+      setShowServerConfig(false);
+  };
+
   return (
     <div className="space-y-6 pb-20 md:pb-0 animate-in fade-in">
-       <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-         <Database className="w-6 h-6 text-emerald-600" /> {t.data}
-       </h2>
-
-       {/* Guide for Sync */}
-       <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
-          <h3 className="flex items-center gap-2 font-bold text-blue-900 text-lg mb-2">
-            <Share2 className="w-5 h-5" /> How to sync between Father & Uncle's mobile?
-          </h3>
-          <p className="text-sm text-blue-800 mb-4 leading-relaxed">
-            Since this app works offline, data is stored on your phone. To share data:
-          </p>
-          <ol className="list-decimal list-inside text-sm text-blue-800 space-y-2 font-medium">
-             <li>Click <strong>"Backup for WhatsApp"</strong> below. It will download a file.</li>
-             <li>Send that file to your Uncle via WhatsApp.</li>
-             <li>Uncle downloads the file on his phone.</li>
-             <li>Uncle opens this app, goes to this Data tab, clicks <strong>"Select File to Merge"</strong> and selects the file.</li>
-          </ol>
+       <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <Database className="w-6 h-6 text-emerald-600" /> {t.data}
+          </h2>
+          <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 border ${safety.bg} ${safety.color} ${safety.border}`}>
+             <safety.icon size={14} /> {safety.label}
+          </div>
        </div>
-       
+
+       {/* Data Safety Monitor */}
+       <div className={`rounded-2xl border p-4 ${safety.bg} ${safety.border}`}>
+           <h4 className={`font-bold flex items-center gap-2 ${safety.color}`}>
+               <Shield size={18} /> Data Safety Status
+           </h4>
+           <p className="text-sm text-slate-700 mt-1">{safety.msg}</p>
+           <p className="text-xs text-slate-500 mt-2">
+               This app stores data on your phone. To prevent data loss (e.g. if phone is lost/cleared), you must use <strong>Cloud Sync</strong> or <strong>Download Backup</strong> regularly.
+           </p>
+       </div>
+
+       {/* Cloud Sync Section */}
+       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="p-6 bg-slate-900 text-white flex justify-between items-center">
+             <div>
+                <h3 className="font-bold text-lg flex items-center gap-2"><Cloud className="w-5 h-5 text-emerald-400"/> {t.cloudSync}</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                    {serverConfig.url ? 'Connected to Server' : 'Offline Mode (Setup Required)'}
+                </p>
+             </div>
+             <div className="text-right">
+                {lastSynced && <p className="text-[10px] text-slate-400 mb-1">{t.lastSynced}: {new Date(lastSynced).toLocaleTimeString()}</p>}
+                <button 
+                    onClick={() => setShowServerConfig(!showServerConfig)} 
+                    className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-600 flex items-center gap-2 transition-colors"
+                >
+                    <Settings size={12}/> {t.serverConfig}
+                </button>
+             </div>
+          </div>
+
+          {showServerConfig && (
+              <div className="p-6 bg-slate-100 border-b border-slate-200 animate-in slide-in-from-top-2">
+                  
+                  {/* Free Option Guide */}
+                  <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+                      <h4 className="font-bold text-blue-900 flex items-center gap-2 mb-2">
+                          <CloudUpload size={16} /> 
+                          No Server? Use JSONBin.io (Free)
+                      </h4>
+                      <ol className="text-xs text-blue-800 list-decimal list-inside space-y-1.5 font-medium">
+                          <li>Go to <a href="https://jsonbin.io/app/signup" target="_blank" rel="noreferrer" className="underline font-bold hover:text-blue-600">jsonbin.io</a> and create a free account.</li>
+                          <li>Create a new empty bin (public or private).</li>
+                          <li>Copy the <strong>Bin ID</strong> (or full URL) and paste it below.</li>
+                          <li>Copy your <strong>API Key (X-Master-Key)</strong> and paste it below.</li>
+                      </ol>
+                  </div>
+
+                  <h4 className="font-bold text-slate-700 mb-3 text-sm">Connection Details</h4>
+                  <div className="space-y-3">
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Server URL / JSONBin Endpoint</label>
+                          <input 
+                            type="text" 
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" 
+                            placeholder="https://api.jsonbin.io/v3/b/..."
+                            value={tempConfig.url}
+                            onChange={(e) => setTempConfig({...tempConfig, url: e.target.value})}
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">API Key (X-Master-Key)</label>
+                          <input 
+                            type="password" 
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" 
+                            placeholder="Secret Key..."
+                            value={tempConfig.apiKey}
+                            onChange={(e) => setTempConfig({...tempConfig, apiKey: e.target.value})}
+                          />
+                      </div>
+                      <div className="flex justify-end gap-2 pt-2">
+                          <button onClick={() => setShowServerConfig(false)} className="text-xs text-slate-500 px-3 py-2">Cancel</button>
+                          <button onClick={handleConfigSave} className="text-xs bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-emerald-700">Save Configuration</button>
+                      </div>
+                  </div>
+              </div>
+          )}
+          
+          <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+             <button 
+                onClick={() => onCloudSync('UPLOAD')}
+                disabled={isSyncing}
+                className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-emerald-200 bg-emerald-50/50 rounded-2xl hover:bg-emerald-50 hover:border-emerald-400 transition-all group disabled:opacity-50"
+             >
+                <div className={`p-4 bg-white rounded-full text-emerald-600 shadow-sm mb-3 group-hover:scale-110 transition-transform ${isSyncing ? 'animate-pulse' : ''}`}>
+                    <Upload size={24} />
+                </div>
+                <span className="font-bold text-emerald-900">{t.uploadToCloud}</span>
+                <span className="text-xs text-emerald-700 mt-1">Save current data to server</span>
+             </button>
+
+             <button 
+                onClick={() => onCloudSync('DOWNLOAD')}
+                disabled={isSyncing}
+                className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-blue-200 bg-blue-50/50 rounded-2xl hover:bg-blue-50 hover:border-blue-400 transition-all group disabled:opacity-50"
+             >
+                <div className={`p-4 bg-white rounded-full text-blue-600 shadow-sm mb-3 group-hover:scale-110 transition-transform ${isSyncing ? 'animate-pulse' : ''}`}>
+                    <Download size={24} />
+                </div>
+                <span className="font-bold text-blue-900">{t.downloadFromCloud}</span>
+                <span className="text-xs text-blue-700 mt-1">Get latest data from server</span>
+             </button>
+          </div>
+       </div>
+
+       {/* Manual Backup Options */}
        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="p-6 bg-slate-50 border-b border-slate-200">
              <h3 className="font-bold text-slate-800 text-lg mb-1">{t.backupRestore}</h3>
-             <p className="text-sm text-slate-600">
-               Save your data securely. Data is stored on your device. Backup regularly.
-             </p>
+             <p className="text-sm text-slate-600">Manual options to save/load your data file.</p>
           </div>
           
           <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -1816,6 +1951,12 @@ const DataManagementView = ({ onImport, onExport, seasons, onExportSeason, lang 
                   className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-blue-200 active:scale-[0.98]"
                 >
                   <Share2 className="w-5 h-5" /> Backup for WhatsApp
+                </button>
+                <button 
+                  onClick={onCopyRaw}
+                  className="w-full py-2 text-blue-600 font-bold text-xs flex items-center justify-center gap-1 hover:underline opacity-80"
+                >
+                  <Clipboard size={12} /> Copy Raw Data (Emergency)
                 </button>
              </div>
 
@@ -1876,6 +2017,19 @@ const App = () => {
     localStorage.setItem('agri_lang', lang);
   }, [lang]);
   
+  // Persistent Storage Request
+  useEffect(() => {
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().then(persistent => {
+        if (persistent) {
+          console.log("Storage will not be cleared except by explicit user action");
+        } else {
+          console.log("Storage may be cleared by the UA under storage pressure.");
+        }
+      });
+    }
+  }, []);
+
   const [seasons, setSeasons] = useState<Season[]>(() => {
     try {
       const saved = localStorage.getItem('agri_seasons');
@@ -1916,12 +2070,23 @@ const App = () => {
     } catch (e) { return []; }
   });
 
+  // Cloud Sync State
+  const [serverConfig, setServerConfig] = useState<ServerConfig>(() => {
+      const saved = localStorage.getItem('agri_server_config');
+      return saved ? JSON.parse(saved) : { url: '', apiKey: '' };
+  });
+  const [lastSynced, setLastSynced] = useState<string | null>(() => localStorage.getItem('agri_last_synced'));
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [showServerConfig, setShowServerConfig] = useState(false);
+
   // Persist Effects
   useEffect(() => localStorage.setItem('agri_seasons', JSON.stringify(seasons)), [seasons]);
   useEffect(() => localStorage.setItem('agri_partners', JSON.stringify(partners)), [partners]);
   useEffect(() => localStorage.setItem('agri_workers', JSON.stringify(workers)), [workers]);
   useEffect(() => localStorage.setItem('agri_transactions', JSON.stringify(transactions)), [transactions]);
   useEffect(() => localStorage.setItem('agri_categories', JSON.stringify(categories)), [categories]);
+  useEffect(() => localStorage.setItem('agri_server_config', JSON.stringify(serverConfig)), [serverConfig]);
+  useEffect(() => { if(lastSynced) localStorage.setItem('agri_last_synced', lastSynced) }, [lastSynced]);
 
   // Derived Calculations
   const financials = useMemo(() => {
@@ -2009,6 +2174,10 @@ const App = () => {
 
   const showNotification = (message: string, type: NotificationType = 'info') => {
     setNotification({ message, type });
+  };
+
+  const updateBackupDate = () => {
+      setLastSynced(new Date().toISOString());
   };
 
   const performDelete = () => {
@@ -2100,6 +2269,7 @@ const App = () => {
       meta: { exportDate: new Date().toISOString(), version: "1.4" }
     };
     downloadJSON(data, `AgriBooks_Full_Backup_${new Date().toISOString().slice(0, 10)}.json`);
+    updateBackupDate(); // Mark safety
   };
 
   const handleExportSeason = (seasonId: string) => {
@@ -2129,6 +2299,16 @@ const App = () => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     showNotification('Download started', 'success');
+  };
+
+  const handleCopyRawData = () => {
+      const data = { transactions, workers, partners, seasons, categories };
+      const raw = JSON.stringify(data);
+      navigator.clipboard.writeText(raw).then(() => {
+          showNotification("Data copied to clipboard! Paste it safely.", 'success');
+      }).catch(() => {
+          showNotification("Failed to copy. Screen might be too small.", 'error');
+      });
   };
 
   const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -2163,6 +2343,72 @@ const App = () => {
       }
     };
     reader.readAsText(file);
+  };
+
+  // --- Sync Logic ---
+  const handleCloudSync = async (mode: 'UPLOAD' | 'DOWNLOAD') => {
+      setIsSyncing(true);
+      
+      // Simulation or Real
+      if (!serverConfig.url) {
+          // Simulate 1.5s delay for effect
+          setTimeout(() => {
+              setIsSyncing(false);
+              setLastSynced(new Date().toISOString());
+              showNotification(mode === 'UPLOAD' ? 'Simulation: Data uploaded successfully.' : 'Simulation: Data downloaded.', 'success');
+          }, 1500);
+          return;
+      }
+
+      try {
+          const headers: HeadersInit = { 'Content-Type': 'application/json' };
+          if (serverConfig.apiKey) headers['X-Master-Key'] = serverConfig.apiKey; // Example for JSONBin
+
+          if (mode === 'UPLOAD') {
+              const payload = {
+                  transactions,
+                  workers,
+                  partners,
+                  seasons,
+                  categories,
+                  meta: { syncDate: new Date().toISOString(), version: "1.4" }
+              };
+              
+              const res = await fetch(serverConfig.url, {
+                  method: 'PUT', // Or POST depending on backend
+                  headers,
+                  body: JSON.stringify(payload)
+              });
+              
+              if (!res.ok) throw new Error("Upload Failed");
+              showNotification("Data uploaded to cloud successfully!", 'success');
+          } else {
+              const res = await fetch(serverConfig.url, { headers });
+              if (!res.ok) throw new Error("Download Failed");
+              
+              const data = await res.json();
+              const payload = data.record || data; // Handle JSONBin structure or raw
+              
+              // Use the pendingImport Logic to confirm before merging
+              setPendingImport(payload); 
+          }
+          updateBackupDate();
+      } catch (e) {
+          console.error(e);
+          showNotification("Sync Failed. Check URL/Network.", 'error');
+      } finally {
+          setIsSyncing(false);
+      }
+  };
+
+  const handleQuickSync = () => {
+    if (!serverConfig.url) {
+      setActiveTab('DATA');
+      setShowServerConfig(true);
+      showNotification("Please setup the free cloud server first.", "info");
+    } else {
+      handleCloudSync('UPLOAD');
+    }
   };
 
   const confirmImport = () => {
@@ -2230,6 +2476,7 @@ const App = () => {
           onEditTransaction={(id: string) => { setActiveTab('TRANSACTIONS'); }} 
           onViewAll={() => setActiveTab('TRANSACTIONS')}
           lang={lang}
+          lastSynced={lastSynced}
         />
       );
       case 'TRANSACTIONS': return (
@@ -2279,6 +2526,14 @@ const App = () => {
            seasons={seasons}
            onExportSeason={handleExportSeason}
            lang={lang}
+           serverConfig={serverConfig}
+           onSaveServerConfig={setServerConfig}
+           onCloudSync={handleCloudSync}
+           isSyncing={isSyncing}
+           lastSynced={lastSynced}
+           showServerConfig={showServerConfig}
+           setShowServerConfig={setShowServerConfig}
+           onCopyRaw={handleCopyRawData}
         />
       );
       default: return null;
@@ -2296,16 +2551,16 @@ const App = () => {
     <div className="min-h-screen flex flex-col md:flex-row bg-slate-50 font-sans text-slate-900 selection:bg-emerald-200">
       {/* Toast Notification */}
       {notification && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[60] animate-in slide-in-from-top-4 fade-in">
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[60] animate-in slide-in-from-top-4 fade-in w-[90%] max-w-sm">
            <div className={`px-6 py-3 rounded-xl shadow-xl flex items-center gap-3 border ${
              notification.type === 'success' ? 'bg-white text-emerald-700 border-emerald-100' : 
              notification.type === 'error' ? 'bg-white text-red-700 border-red-100' : 
              'bg-slate-800 text-white border-slate-700'
            }`}>
-              {notification.type === 'success' && <CheckCircle className="w-5 h-5 text-emerald-500" />}
-              {notification.type === 'error' && <AlertCircle className="w-5 h-5 text-red-500" />}
-              {notification.type === 'info' && <Info className="w-5 h-5 text-blue-400" />}
-              <span className="font-medium">{notification.message}</span>
+              {notification.type === 'success' && <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />}
+              {notification.type === 'error' && <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />}
+              {notification.type === 'info' && <Info className="w-5 h-5 text-blue-400 flex-shrink-0" />}
+              <span className="font-medium text-sm">{notification.message}</span>
            </div>
         </div>
       )}
@@ -2316,13 +2571,15 @@ const App = () => {
           <Sprout className="w-6 h-6 text-emerald-400" />
           <h1 className="text-lg font-bold tracking-tight">AgriBooks</h1>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+             {/* Mobile Sync Indicator */}
+             <button onClick={handleQuickSync} className={`relative flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${serverConfig.url ? 'text-emerald-400 hover:bg-slate-800' : 'text-slate-400 hover:text-white'}`}>
+                <CloudUpload className={`w-5 h-5 ${isSyncing ? 'animate-bounce' : ''}`} />
+                {!lastSynced && !isSyncing && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-slate-900"></span>}
+             </button>
              <button onClick={() => setLang(l => l === 'EN' ? 'GU' : 'EN')} className="flex items-center gap-1 text-xs font-bold bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
                 <Languages size={14} /> {lang}
              </button>
-            <button onClick={() => setActiveTab('DATA')} className="text-slate-300 hover:text-white flex flex-col items-center">
-                <Database className="w-5 h-5" />
-            </button>
         </div>
       </div>
 
@@ -2339,6 +2596,28 @@ const App = () => {
                 <Languages size={14} /> {lang}
             </button>
         </div>
+        
+        {/* Quick Sync Button Desktop */}
+        <div className="px-4 mb-4">
+           <button 
+             onClick={handleQuickSync}
+             disabled={isSyncing}
+             className={`w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 border border-dashed font-bold relative overflow-hidden group ${
+               serverConfig.url 
+                 ? 'bg-slate-800 border-emerald-500/50 text-emerald-400 hover:bg-slate-700 hover:text-emerald-300' 
+                 : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-white'
+             }`}
+           >
+             <CloudUpload size={20} className={isSyncing ? 'animate-bounce' : ''} />
+             {isSyncing ? 'Saving...' : (serverConfig.url ? 'Cloud Save' : 'Setup Cloud')}
+             
+             {/* Alert Dot for Desktop */}
+             {!lastSynced && !isSyncing && !serverConfig.url && (
+                <span className="absolute top-3 right-3 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-lg shadow-red-500/50"></span>
+             )}
+           </button>
+        </div>
+
         <nav className="px-4 py-2 space-y-2 flex-1">
           <NavButton icon={<PieChart />} label={t.dashboard} active={activeTab === 'DASHBOARD'} onClick={() => setActiveTab('DASHBOARD')} />
           <NavButton icon={<DollarSign />} label={t.transactions} active={activeTab === 'TRANSACTIONS'} onClick={() => setActiveTab('TRANSACTIONS')} />
@@ -2350,7 +2629,7 @@ const App = () => {
           </div>
         </nav>
         <div className="p-6 bg-slate-950/50">
-          <p className="text-xs text-slate-500">v1.5 &bull; Offline Ready</p>
+          <p className="text-xs text-slate-500">v1.7 &bull; Safety Enabled</p>
         </div>
       </div>
 
