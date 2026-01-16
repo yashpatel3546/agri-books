@@ -6,9 +6,9 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
       // START OF FIX --------------------------------------
-      // This line prevents the White Screen. 
-      // It MUST match your GitHub repository name exactly.
-      base: "/agri-books/", 
+      // CHANGED: Since you are using a custom domain, 
+      // the base must be "/" (or you can delete this line).
+      base: "/", 
       // END OF FIX ----------------------------------------
 
       server: {
